@@ -1,4 +1,5 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
+import { supabase } from "./supabase";
 import {
   AreaChart,
   Area,
@@ -21,33 +22,43 @@ fl.href =
 fl.rel = "stylesheet";
 document.head.appendChild(fl);
 
-const injectStyles = () => {
-  let el = document.getElementById("flowly-styles");
-  if (el) return;
-  el = document.createElement("style");
-  el.id = "flowly-styles";
-  el.textContent = `
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    ::-webkit-scrollbar { width: 4px; }
-    ::-webkit-scrollbar-track { background: var(--bg); }
-    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-    input:-webkit-autofill { -webkit-box-shadow: 0 0 0 30px var(--panel) inset !important; -webkit-text-fill-color: var(--text) !important; }
-    select option { background: var(--panel); color: var(--text); }
-    @keyframes fadeUp  { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
-    @keyframes scaleIn { from { opacity:0; transform:scale(.95); } to { opacity:1; transform:scale(1); } }
-    .fu  { animation: fadeUp .38s ease both; }
-    .fu1 { animation: fadeUp .38s .07s ease both; }
-    .fu2 { animation: fadeUp .38s .14s ease both; }
-    .fu3 { animation: fadeUp .38s .21s ease both; }
-    .si  { animation: scaleIn .26s ease both; }
-    .hl  { transition: transform .2s, box-shadow .2s; }
-    .hl:hover { transform: translateY(-2px); }
-    .ib  { background: none; border: none; cursor: pointer; transition: opacity .15s; font-family: inherit; }
-    .ib:hover { opacity: .6; }
-  `;
-  document.head.appendChild(el);
-};
-injectStyles();
+const gs = document.createElement("style");
+gs.textContent = `
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  input:-webkit-autofill { -webkit-box-shadow: 0 0 0 30px var(--panel) inset !important; -webkit-text-fill-color: var(--text) !important; }
+  select option { background: var(--panel); color: var(--text); }
+  @keyframes fadeUp  { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
+  @keyframes scaleIn { from { opacity:0; transform:scale(.95); }       to { opacity:1; transform:scale(1); } }
+  @keyframes spin    { to { transform: rotate(360deg); } }
+  .fu  { animation: fadeUp .38s ease both; }
+  .fu1 { animation: fadeUp .38s .06s ease both; }
+  .fu2 { animation: fadeUp .38s .12s ease both; }
+  .fu3 { animation: fadeUp .38s .18s ease both; }
+  .si  { animation: scaleIn .26s ease both; }
+  .hl  { transition: transform .2s, box-shadow .2s; }
+  .hl:hover { transform: translateY(-2px); }
+  .ib  { background: none; border: none; cursor: pointer; transition: opacity .15s; }
+  .ib:hover { opacity: .6; }
+  .spinner { animation: spin 1s linear infinite; display: inline-block; }
+  @media (max-width: 768px) {
+    .sidebar { transform: translateX(-100%); transition: transform .28s ease !important; }
+    .sidebar.open { transform: translateX(0) !important; }
+    .main { margin-left: 0 !important; }
+    .menu-btn { display: flex !important; }
+    .g2  { grid-template-columns: 1fr !important; }
+    .g4  { grid-template-columns: 1fr 1fr !important; }
+    .topbar { flex-wrap: wrap; }
+  }
+  @media (max-width: 480px) {
+    .g4  { grid-template-columns: 1fr !important; }
+    .main { padding: 14px !important; }
+  }
+  .overlay-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 150; }
+`;
+document.head.appendChild(gs);
 
 /* ── Themes ── */
 const DARK = {
@@ -111,16 +122,16 @@ function applyTheme(t) {
 
 /* ── Constants ── */
 const CURRENCIES = [
-  { code: "USD", sym: "$" },
-  { code: "EUR", sym: "€" },
-  { code: "GBP", sym: "£" },
-  { code: "LBP", sym: "ل.ل" },
-  { code: "JPY", sym: "¥" },
-  { code: "CAD", sym: "CA$" },
-  { code: "AED", sym: "د.إ" },
-  { code: "INR", sym: "₹" },
-  { code: "CHF", sym: "Fr" },
-  { code: "AUD", sym: "A$" },
+  { code: "USD", sym: "$", name: "US Dollar" },
+  { code: "EUR", sym: "€", name: "Euro" },
+  { code: "GBP", sym: "£", name: "British Pound" },
+  { code: "LBP", sym: "ل.ل", name: "Lebanese Pound" },
+  { code: "JPY", sym: "¥", name: "Japanese Yen" },
+  { code: "CAD", sym: "CA$", name: "Canadian Dollar" },
+  { code: "AED", sym: "د.إ", name: "UAE Dirham" },
+  { code: "INR", sym: "₹", name: "Indian Rupee" },
+  { code: "CHF", sym: "Fr", name: "Swiss Franc" },
+  { code: "AUD", sym: "A$", name: "Australian Dollar" },
 ];
 const getCur = (code) =>
   CURRENCIES.find((c) => c.code === code) || CURRENCIES[0];
@@ -169,8 +180,6 @@ const EMOJIS = [
   "🌈",
   "🐶",
   "🏋️",
-  "🍺",
-  "🧸",
   "✈️",
 ];
 const PALETTE = [
@@ -264,227 +273,7 @@ const DEF_CATS = [
   { id: "oth", type: "expense", name: "Other", emoji: "📦", color: "#6b7280" },
 ];
 
-const mkTxns = () => [
-  {
-    id: uid(),
-    type: "income",
-    catId: "sal",
-    amount: 4500,
-    note: "Monthly salary",
-    date: "2025-04-01",
-    currency: "USD",
-  },
-  {
-    id: uid(),
-    type: "expense",
-    catId: "hou",
-    amount: 1200,
-    note: "April rent",
-    date: "2025-04-02",
-    currency: "USD",
-  },
-  {
-    id: uid(),
-    type: "expense",
-    catId: "foo",
-    amount: 320,
-    note: "Groceries",
-    date: "2025-04-03",
-    currency: "USD",
-  },
-  {
-    id: uid(),
-    type: "income",
-    catId: "fre",
-    amount: 800,
-    note: "Design project",
-    date: "2025-04-05",
-    currency: "USD",
-  },
-  {
-    id: uid(),
-    type: "expense",
-    catId: "tra",
-    amount: 150,
-    note: "Gas & parking",
-    date: "2025-04-06",
-    currency: "USD",
-  },
-  {
-    id: uid(),
-    type: "expense",
-    catId: "ent",
-    amount: 90,
-    note: "Streaming services",
-    date: "2025-04-07",
-    currency: "USD",
-  },
-  {
-    id: uid(),
-    type: "expense",
-    catId: "sho",
-    amount: 240,
-    note: "New clothes",
-    date: "2025-04-09",
-    currency: "USD",
-  },
-  {
-    id: uid(),
-    type: "income",
-    catId: "inv",
-    amount: 220,
-    note: "Dividend payout",
-    date: "2025-04-10",
-    currency: "USD",
-  },
-  {
-    id: uid(),
-    type: "expense",
-    catId: "hea",
-    amount: 60,
-    note: "Gym membership",
-    date: "2025-04-12",
-    currency: "USD",
-  },
-  {
-    id: uid(),
-    type: "expense",
-    catId: "uti",
-    amount: 130,
-    note: "Electric + internet",
-    date: "2025-04-14",
-    currency: "USD",
-  },
-  {
-    id: uid(),
-    type: "expense",
-    catId: "foo",
-    amount: 85,
-    note: "Restaurant dinner",
-    date: "2025-04-16",
-    currency: "USD",
-  },
-  {
-    id: uid(),
-    type: "income",
-    catId: "fre",
-    amount: 600,
-    note: "Logo design",
-    date: "2025-04-18",
-    currency: "USD",
-  },
-  {
-    id: uid(),
-    type: "expense",
-    catId: "tvl",
-    amount: 380,
-    note: "Weekend trip",
-    date: "2025-04-20",
-    currency: "USD",
-  },
-  {
-    id: uid(),
-    type: "expense",
-    catId: "edu",
-    amount: 50,
-    note: "Online course",
-    date: "2025-04-21",
-    currency: "USD",
-  },
-];
-
-const mkRecurring = () => [
-  {
-    id: uid(),
-    catId: "hou",
-    amount: 1200,
-    note: "Monthly Rent",
-    frequency: "monthly",
-    nextDate: "2025-05-01",
-    currency: "USD",
-  },
-  {
-    id: uid(),
-    catId: "ent",
-    amount: 15,
-    note: "Netflix",
-    frequency: "monthly",
-    nextDate: "2025-05-07",
-    currency: "USD",
-  },
-  {
-    id: uid(),
-    catId: "hea",
-    amount: 60,
-    note: "Gym Membership",
-    frequency: "monthly",
-    nextDate: "2025-05-12",
-    currency: "USD",
-  },
-];
-const mkBills = () => [
-  {
-    id: uid(),
-    catId: "uti",
-    amount: 130,
-    note: "Electric Bill",
-    dueDate: "2025-05-05",
-    paid: false,
-    currency: "USD",
-  },
-  {
-    id: uid(),
-    catId: "hou",
-    amount: 1200,
-    note: "Rent",
-    dueDate: "2025-05-01",
-    paid: false,
-    currency: "USD",
-  },
-  {
-    id: uid(),
-    catId: "ent",
-    amount: 15,
-    note: "Netflix",
-    dueDate: "2025-04-22",
-    paid: true,
-    currency: "USD",
-  },
-];
-const mkBudgets = () => [
-  { id: uid(), catId: "foo", limit: 400, currency: "USD" },
-  { id: uid(), catId: "sho", limit: 300, currency: "USD" },
-  { id: uid(), catId: "ent", limit: 100, currency: "USD" },
-  { id: uid(), catId: "tra", limit: 200, currency: "USD" },
-];
-const mkGoals = () => [
-  {
-    id: uid(),
-    name: "Japan Trip",
-    target: 5000,
-    saved: 1800,
-    emoji: "✈️",
-    deadline: "2025-12-01",
-  },
-  {
-    id: uid(),
-    name: "Emergency Fund",
-    target: 10000,
-    saved: 6200,
-    emoji: "🛡️",
-    deadline: "",
-  },
-  {
-    id: uid(),
-    name: "New Laptop",
-    target: 2000,
-    saved: 800,
-    emoji: "💻",
-    deadline: "2025-08-01",
-  },
-];
-
-const MONTHLY = [
+const MONTHLY_DATA = [
   { m: "Jan", inc: 3200, exp: 2100 },
   { m: "Feb", inc: 3800, exp: 2400 },
   { m: "Mar", inc: 4100, exp: 2800 },
@@ -495,8 +284,8 @@ const MONTHLY = [
   { m: "Aug", inc: 5500, exp: 2900 },
 ];
 
-/* ── Logo ── */
-function FlowlyLogo({ size = 30 }) {
+/* ── vaulta Logo ── */
+function VaultaLogo({ size = 30 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
       <defs>
@@ -520,7 +309,7 @@ function FlowlyLogo({ size = 30 }) {
   );
 }
 
-/* ── UI Primitives ── */
+/* ── Shared UI ── */
 function Btn({
   children,
   onClick,
@@ -528,6 +317,7 @@ function Btn({
   size = "md",
   full = false,
   disabled = false,
+  loading = false,
 }) {
   const pad = { sm: "6px 12px", md: "9px 18px", lg: "12px 26px" };
   const fs = { sm: 12, md: 13, lg: 15 };
@@ -562,30 +352,39 @@ function Btn({
   return (
     <button
       onClick={onClick}
-      disabled={disabled}
+      disabled={disabled || loading}
       style={{
         padding: pad[size],
         borderRadius: 9,
-        cursor: disabled ? "not-allowed" : "pointer",
+        cursor: disabled || loading ? "not-allowed" : "pointer",
         fontFamily: "Plus Jakarta Sans,sans-serif",
         fontWeight: 600,
         fontSize: fs[size],
         width: full ? "100%" : "auto",
         transition: "all .2s",
-        opacity: disabled ? 0.45 : 1,
+        opacity: disabled || loading ? 0.5 : 1,
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
-        gap: 5,
+        gap: 6,
         ...vs[variant],
       }}
     >
+      {loading && <span className="spinner">⟳</span>}
       {children}
     </button>
   );
 }
 
-function Field({ label, type = "text", value, onChange, placeholder, prefix }) {
+function Field({
+  label,
+  type = "text",
+  value,
+  onChange,
+  placeholder,
+  prefix,
+  error,
+}) {
   return (
     <div style={{ marginBottom: 11 }}>
       {label && (
@@ -628,7 +427,7 @@ function Field({ label, type = "text", value, onChange, placeholder, prefix }) {
           style={{
             width: "100%",
             background: "var(--card)",
-            border: "1px solid var(--border)",
+            border: `1px solid ${error ? "var(--expense)" : "var(--border)"}`,
             borderRadius: 9,
             padding: prefix ? "9px 11px 9px 28px" : "9px 11px",
             color: "var(--text)",
@@ -638,9 +437,25 @@ function Field({ label, type = "text", value, onChange, placeholder, prefix }) {
             transition: "border-color .2s",
           }}
           onFocus={(e) => (e.target.style.borderColor = "var(--borderFocus)")}
-          onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
+          onBlur={(e) =>
+            (e.target.style.borderColor = error
+              ? "var(--expense)"
+              : "var(--border)")
+          }
         />
       </div>
+      {error && (
+        <div
+          style={{
+            fontSize: 11,
+            color: "var(--expense)",
+            marginTop: 4,
+            fontFamily: "Plus Jakarta Sans,sans-serif",
+          }}
+        >
+          {error}
+        </div>
+      )}
     </div>
   );
 }
@@ -708,7 +523,7 @@ function Modal({ onClose, children, width = 460 }) {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        zIndex: 2000,
+        zIndex: 1000,
         padding: 16,
       }}
     >
@@ -762,10 +577,10 @@ function MH({ title, onClose }) {
   );
 }
 
-function Card({ children, style: s = {} }) {
+function Card({ children, className = "", style: s = {} }) {
   return (
     <div
-      className="hl"
+      className={"hl " + className}
       style={{
         background: "var(--panel)",
         border: "1px solid var(--border)",
@@ -872,12 +687,48 @@ function Tag({ color, children }) {
   );
 }
 
+function Spinner({ text = "Loading..." }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 60,
+        gap: 14,
+      }}
+    >
+      <div
+        style={{
+          width: 36,
+          height: 36,
+          border: "3px solid var(--border)",
+          borderTopColor: "var(--accent)",
+          borderRadius: "50%",
+          animation: "spin 1s linear infinite",
+        }}
+      />
+      <div
+        style={{
+          fontSize: 13,
+          color: "var(--textMuted)",
+          fontFamily: "Plus Jakarta Sans,sans-serif",
+        }}
+      >
+        {text}
+      </div>
+    </div>
+  );
+}
+
 function TxnRow({ t, cats, currency, onDelete }) {
-  const cat = cats.find((c) => c.id === t.catId) || {
+  const cat = cats.find((c) => c.id === t.cat_id || c.id === t.catId) || {
     emoji: "📦",
     name: "Other",
     color: "#6b7280",
   };
+  const catId = t.cat_id || t.catId;
   return (
     <div
       style={{
@@ -971,12 +822,43 @@ function TxnRow({ t, cats, currency, onDelete }) {
   );
 }
 
-/* ── Modals ── */
+/* ── AUTH SCREEN ── */
 function AuthScreen({ onLogin }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
   const [name, setName] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit() {
+    setError("");
+    setLoading(true);
+    try {
+      if (mode === "signup") {
+        const { data, error: e } = await supabase.auth.signUp({
+          email,
+          password: pass,
+          options: { data: { full_name: name } },
+        });
+        if (e) throw e;
+        if (data.user) onLogin(data.user);
+        else setError("Check your email to confirm your account!");
+      } else {
+        const { data, error: e } = await supabase.auth.signInWithPassword({
+          email,
+          password: pass,
+        });
+        if (e) throw e;
+        onLogin(data.user);
+      }
+    } catch (e) {
+      setError(e.message || "Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <div
       style={{
@@ -1009,7 +891,7 @@ function AuthScreen({ onLogin }) {
               marginBottom: 14,
             }}
           >
-            <FlowlyLogo size={54} />
+            <VaultaLogo size={54} />
           </div>
           <div
             style={{
@@ -1020,7 +902,7 @@ function AuthScreen({ onLogin }) {
               fontFamily: "Plus Jakarta Sans,sans-serif",
             }}
           >
-            Flowly
+            Vaulta
           </div>
           <div
             style={{
@@ -1054,7 +936,10 @@ function AuthScreen({ onLogin }) {
             {["login", "signup"].map((m) => (
               <button
                 key={m}
-                onClick={() => setMode(m)}
+                onClick={() => {
+                  setMode(m);
+                  setError("");
+                }}
                 style={{
                   flex: 1,
                   padding: "9px 0",
@@ -1095,17 +980,24 @@ function AuthScreen({ onLogin }) {
             onChange={(e) => setPass(e.target.value)}
             placeholder="••••••••"
           />
-          <div style={{ marginTop: 6 }}>
-            <Btn
-              full
-              size="lg"
-              onClick={() =>
-                onLogin({ name: name || email.split("@")[0] || "User", email })
-              }
+          {error && (
+            <div
+              style={{
+                fontSize: 12,
+                color: "var(--expense)",
+                marginBottom: 10,
+                padding: "8px 12px",
+                background: "var(--expenseBg)",
+                borderRadius: 8,
+                fontFamily: "Plus Jakarta Sans,sans-serif",
+              }}
             >
-              {mode === "login" ? "Sign In →" : "Create Account →"}
-            </Btn>
-          </div>
+              {error}
+            </div>
+          )}
+          <Btn full size="lg" onClick={handleSubmit} loading={loading}>
+            {mode === "login" ? "Sign In →" : "Create Account →"}
+          </Btn>
           <div
             style={{
               fontSize: 11,
@@ -1115,7 +1007,9 @@ function AuthScreen({ onLogin }) {
               fontFamily: "Plus Jakarta Sans,sans-serif",
             }}
           >
-            Demo: any email + password works
+            {mode === "signup"
+              ? "Free forever · No credit card needed"
+              : "Secured by Supabase Auth 🔒"}
           </div>
         </div>
       </div>
@@ -1123,7 +1017,8 @@ function AuthScreen({ onLogin }) {
   );
 }
 
-function AddTxnModal({ onClose, onAdd, cats, currency }) {
+/* ── ADD TRANSACTION MODAL ── */
+function AddTxnModal({ onClose, onAdd, cats, currency, userId }) {
   const [type, setType] = useState("expense");
   const [amount, setAmount] = useState("");
   const [catId, setCatId] = useState(
@@ -1132,19 +1027,30 @@ function AddTxnModal({ onClose, onAdd, cats, currency }) {
   const [note, setNote] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [cur, setCur] = useState(currency);
-  function submit() {
+  const [loading, setLoading] = useState(false);
+
+  async function submit() {
     if (!amount || isNaN(+amount) || +amount <= 0) return;
-    onAdd({
-      id: uid(),
+    setLoading(true);
+    const row = {
+      user_id: userId,
       type,
-      catId,
+      cat_id: catId,
       amount: +amount,
       note,
       date,
       currency: cur,
-    });
+    };
+    const { data, error } = await supabase
+      .from("transactions")
+      .insert(row)
+      .select()
+      .single();
+    if (!error && data) onAdd(data);
+    setLoading(false);
     onClose();
   }
+
   return (
     <Modal onClose={onClose}>
       <MH title="New Transaction" onClose={onClose} />
@@ -1233,7 +1139,7 @@ function AddTxnModal({ onClose, onAdd, cats, currency }) {
         <Btn variant="outline" full onClick={onClose}>
           Cancel
         </Btn>
-        <Btn full onClick={submit}>
+        <Btn full onClick={submit} loading={loading}>
           Add Transaction
         </Btn>
       </div>
@@ -1241,20 +1147,38 @@ function AddTxnModal({ onClose, onAdd, cats, currency }) {
   );
 }
 
-function CatsModal({ onClose, cats, onSave }) {
+/* ── CATEGORIES MODAL ── */
+function CatsModal({ onClose, cats, onSave, userId }) {
   const [list, setList] = useState(cats);
   const [nm, setNm] = useState("");
   const [em, setEm] = useState("💡");
   const [col, setCol] = useState("#6366f1");
   const [tp, setTp] = useState("expense");
-  function addCat() {
+  const [saving, setSaving] = useState(false);
+
+  async function addCat() {
     if (!nm.trim()) return;
-    setList((p) => [
-      ...p,
-      { id: uid(), type: tp, name: nm.trim(), emoji: em, color: col },
-    ]);
+    const row = {
+      user_id: userId,
+      type: tp,
+      name: nm.trim(),
+      emoji: em,
+      color: col,
+    };
+    const { data } = await supabase
+      .from("categories")
+      .insert(row)
+      .select()
+      .single();
+    if (data) setList((prev) => [...prev, data]);
     setNm("");
   }
+
+  async function removeCat(id) {
+    await supabase.from("categories").delete().eq("id", id);
+    setList((prev) => prev.filter((x) => x.id !== id));
+  }
+
   return (
     <Modal onClose={() => onSave(list)} width={500}>
       <MH title="⚙️ Categories" onClose={() => onSave(list)} />
@@ -1277,7 +1201,7 @@ function CatsModal({ onClose, cats, onSave }) {
             fontFamily: "Plus Jakarta Sans,sans-serif",
           }}
         >
-          Add New
+          Add New Category
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <div style={{ flex: 1 }}>
@@ -1458,30 +1382,59 @@ function CatsModal({ onClose, cats, onSave }) {
             >
               {c.type}
             </Tag>
-            <button
-              onClick={() => setList((p) => p.filter((x) => x.id !== c.id))}
-              className="ib"
-              style={{ color: "var(--textMuted)", fontSize: 12 }}
-            >
-              ✕
-            </button>
+            {c.user_id && (
+              <button
+                onClick={() => removeCat(c.id)}
+                className="ib"
+                style={{ color: "var(--textMuted)", fontSize: 12 }}
+              >
+                ✕
+              </button>
+            )}
           </div>
         ))}
       </div>
       <Btn full onClick={() => onSave(list)}>
-        Save Changes
+        Done
       </Btn>
     </Modal>
   );
 }
 
-function WalletModal({ onClose, wallet, onSave }) {
+/* ── WALLET MODAL ── */
+function WalletModal({ onClose, wallet, onSave, userId }) {
   const [cash, setCash] = useState(String(wallet.cash));
   const [bank, setBank] = useState(String(wallet.bank));
   const [sav, setSav] = useState(String(wallet.savings));
+  const [loading, setLoading] = useState(false);
+
+  async function save() {
+    setLoading(true);
+    const row = {
+      user_id: userId,
+      cash: +cash || 0,
+      bank: +bank || 0,
+      savings: +sav || 0,
+    };
+    await supabase.from("wallet").upsert(row, { onConflict: "user_id" });
+    onSave({ cash: +cash || 0, bank: +bank || 0, savings: +sav || 0 });
+    setLoading(false);
+    onClose();
+  }
+
   return (
     <Modal onClose={onClose} width={360}>
       <MH title="💳 Update Wallet" onClose={onClose} />
+      <div
+        style={{
+          fontSize: 13,
+          color: "var(--textSub)",
+          marginBottom: 14,
+          fontFamily: "Plus Jakarta Sans,sans-serif",
+        }}
+      >
+        Track where your money actually sits right now.
+      </div>
       <Field
         label="Cash on Hand"
         type="number"
@@ -1506,24 +1459,21 @@ function WalletModal({ onClose, wallet, onSave }) {
         placeholder="0.00"
         prefix="$"
       />
-      <Btn
-        full
-        onClick={() =>
-          onSave({ cash: +cash || 0, bank: +bank || 0, savings: +sav || 0 })
-        }
-      >
+      <Btn full onClick={save} loading={loading}>
         Save Wallet
       </Btn>
     </Modal>
   );
 }
 
-function GoalModal({ onClose, onAdd }) {
+/* ── GOAL MODAL ── */
+function GoalModal({ onClose, onAdd, userId }) {
   const [name, setName] = useState("");
   const [target, setTarget] = useState("");
   const [saved, setSaved] = useState("");
   const [emoji, setEmoji] = useState("🎯");
   const [dl, setDl] = useState("");
+  const [loading, setLoading] = useState(false);
   const GE = [
     "🎯",
     "✈️",
@@ -1538,19 +1488,24 @@ function GoalModal({ onClose, onAdd }) {
     "🌍",
     "🎉",
   ];
-  function submit() {
-    if (name && target) {
-      onAdd({
-        id: uid(),
-        name,
-        target: +target,
-        saved: +saved || 0,
-        emoji,
-        deadline: dl,
-      });
-      onClose();
-    }
+
+  async function submit() {
+    if (!name || !target) return;
+    setLoading(true);
+    const row = {
+      user_id: userId,
+      name,
+      target: +target,
+      saved: +saved || 0,
+      emoji,
+      deadline: dl || null,
+    };
+    const { data } = await supabase.from("goals").insert(row).select().single();
+    if (data) onAdd(data);
+    setLoading(false);
+    onClose();
   }
+
   return (
     <Modal onClose={onClose} width={380}>
       <MH title="🎯 New Savings Goal" onClose={onClose} />
@@ -1583,7 +1538,7 @@ function GoalModal({ onClose, onAdd }) {
         placeholder="e.g. Japan Trip"
       />
       <Field
-        label="Target"
+        label="Target Amount"
         type="number"
         value={target}
         onChange={(e) => setTarget(e.target.value)}
@@ -1604,14 +1559,15 @@ function GoalModal({ onClose, onAdd }) {
         value={dl}
         onChange={(e) => setDl(e.target.value)}
       />
-      <Btn full onClick={submit}>
+      <Btn full onClick={submit} loading={loading}>
         Create Goal
       </Btn>
     </Modal>
   );
 }
 
-function RecurModal({ onClose, onAdd, cats, currency }) {
+/* ── RECURRING MODAL ── */
+function RecurModal({ onClose, onAdd, cats, currency, userId }) {
   const [catId, setCatId] = useState(
     cats.filter((c) => c.type === "expense")[0]?.id || "",
   );
@@ -1620,20 +1576,30 @@ function RecurModal({ onClose, onAdd, cats, currency }) {
   const [freq, setFreq] = useState("monthly");
   const [next, setNext] = useState(new Date().toISOString().split("T")[0]);
   const [cur, setCur] = useState(currency);
-  function submit() {
-    if (amount) {
-      onAdd({
-        id: uid(),
-        catId,
-        amount: +amount,
-        note,
-        frequency: freq,
-        nextDate: next,
-        currency: cur,
-      });
-      onClose();
-    }
+  const [loading, setLoading] = useState(false);
+
+  async function submit() {
+    if (!amount) return;
+    setLoading(true);
+    const row = {
+      user_id: userId,
+      cat_id: catId,
+      amount: +amount,
+      note,
+      frequency: freq,
+      next_date: next,
+      currency: cur,
+    };
+    const { data } = await supabase
+      .from("recurring")
+      .insert(row)
+      .select()
+      .single();
+    if (data) onAdd(data);
+    setLoading(false);
+    onClose();
   }
+
   return (
     <Modal onClose={onClose} width={380}>
       <MH title="🔁 New Recurring" onClose={onClose} />
@@ -1658,7 +1624,7 @@ function RecurModal({ onClose, onAdd, cats, currency }) {
         label="Note"
         value={note}
         onChange={(e) => setNote(e.target.value)}
-        placeholder="e.g. Netflix subscription"
+        placeholder="e.g. Netflix"
       />
       <Sel
         label="Frequency"
@@ -1685,14 +1651,15 @@ function RecurModal({ onClose, onAdd, cats, currency }) {
         value={next}
         onChange={(e) => setNext(e.target.value)}
       />
-      <Btn full onClick={submit}>
+      <Btn full onClick={submit} loading={loading}>
         Add Recurring
       </Btn>
     </Modal>
   );
 }
 
-function BillModal({ onClose, onAdd, cats, currency }) {
+/* ── BILL MODAL ── */
+function BillModal({ onClose, onAdd, cats, currency, userId }) {
   const [catId, setCatId] = useState(
     cats.filter((c) => c.type === "expense")[0]?.id || "",
   );
@@ -1700,20 +1667,26 @@ function BillModal({ onClose, onAdd, cats, currency }) {
   const [note, setNote] = useState("");
   const [due, setDue] = useState(new Date().toISOString().split("T")[0]);
   const [cur, setCur] = useState(currency);
-  function submit() {
-    if (note && amount) {
-      onAdd({
-        id: uid(),
-        catId,
-        amount: +amount,
-        note,
-        dueDate: due,
-        paid: false,
-        currency: cur,
-      });
-      onClose();
-    }
+  const [loading, setLoading] = useState(false);
+
+  async function submit() {
+    if (!note || !amount) return;
+    setLoading(true);
+    const row = {
+      user_id: userId,
+      cat_id: catId,
+      amount: +amount,
+      note,
+      due_date: due,
+      paid: false,
+      currency: cur,
+    };
+    const { data } = await supabase.from("bills").insert(row).select().single();
+    if (data) onAdd(data);
+    setLoading(false);
+    onClose();
   }
+
   return (
     <Modal onClose={onClose} width={380}>
       <MH title="📅 New Bill Reminder" onClose={onClose} />
@@ -1721,7 +1694,7 @@ function BillModal({ onClose, onAdd, cats, currency }) {
         label="Bill Name"
         value={note}
         onChange={(e) => setNote(e.target.value)}
-        placeholder="e.g. Electricity"
+        placeholder="e.g. Electricity Bill"
       />
       <Field
         label="Amount"
@@ -1755,25 +1728,49 @@ function BillModal({ onClose, onAdd, cats, currency }) {
         value={due}
         onChange={(e) => setDue(e.target.value)}
       />
-      <Btn full onClick={submit}>
+      <Btn full onClick={submit} loading={loading}>
         Add Bill
       </Btn>
     </Modal>
   );
 }
 
-function BudgetModal({ onClose, cats, budgets, onSave }) {
+/* ── BUDGET MODAL ── */
+function BudgetModal({ onClose, cats, budgets, onSave, userId }) {
   const [list, setList] = useState(budgets);
   const expCats = cats.filter((c) => c.type === "expense");
-  function setLimit(id, val) {
-    setList((p) =>
-      p.map((b) => (b.id === id ? { ...b, limit: +val || 0 } : b)),
+
+  async function setLimit(id, val) {
+    setList((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, limit_amount: +val || 0 } : b)),
     );
+    await supabase
+      .from("budgets")
+      .update({ limit_amount: +val || 0 })
+      .eq("id", id);
   }
-  function addCat(catId) {
-    if (catId && !list.find((b) => b.catId === catId))
-      setList((p) => [...p, { id: uid(), catId, limit: 0, currency: "USD" }]);
+
+  async function addCat(catId) {
+    if (!catId || list.find((b) => b.cat_id === catId)) return;
+    const row = {
+      user_id: userId,
+      cat_id: catId,
+      limit_amount: 0,
+      currency: "USD",
+    };
+    const { data } = await supabase
+      .from("budgets")
+      .insert(row)
+      .select()
+      .single();
+    if (data) setList((prev) => [...prev, data]);
   }
+
+  async function removeBudget(id) {
+    await supabase.from("budgets").delete().eq("id", id);
+    setList((prev) => prev.filter((x) => x.id !== id));
+  }
+
   return (
     <Modal onClose={() => onSave(list)} width={420}>
       <MH title="🎯 Budget Goals" onClose={() => onSave(list)} />
@@ -1785,10 +1782,10 @@ function BudgetModal({ onClose, cats, budgets, onSave }) {
           fontFamily: "Plus Jakarta Sans,sans-serif",
         }}
       >
-        Set monthly limits. Alerts show when you hit 80%.
+        Set monthly spending limits. Alerts when you hit 80%.
       </div>
       {list.map((b) => {
-        const cat = cats.find((c) => c.id === b.catId);
+        const cat = cats.find((c) => c.id === b.cat_id);
         return (
           <div
             key={b.id}
@@ -1812,14 +1809,14 @@ function BudgetModal({ onClose, cats, budgets, onSave }) {
             </div>
             <div style={{ width: 130 }}>
               <Field
-                value={String(b.limit)}
+                value={String(b.limit_amount || 0)}
                 onChange={(e) => setLimit(b.id, e.target.value)}
                 placeholder="Limit"
                 prefix="$"
               />
             </div>
             <button
-              onClick={() => setList((p) => p.filter((x) => x.id !== b.id))}
+              onClick={() => removeBudget(b.id)}
               className="ib"
               style={{ color: "var(--textMuted)", fontSize: 12 }}
             >
@@ -1836,348 +1833,115 @@ function BudgetModal({ onClose, cats, budgets, onSave }) {
           options={[
             { value: "", label: "+ Add category budget..." },
             ...expCats
-              .filter((c) => !list.find((b) => b.catId === c.id))
+              .filter((c) => !list.find((b) => b.cat_id === c.id))
               .map((c) => ({ value: c.id, label: c.emoji + " " + c.name })),
           ]}
         />
       </div>
       <Btn full onClick={() => onSave(list)}>
-        Save Budgets
+        Done
       </Btn>
     </Modal>
   );
 }
 
+/* ── CSV Export ── */
 function exportCSV(txns, cats) {
+  const header = "Date,Type,Category,Amount,Currency,Note";
   const rows = txns.map((t) => {
-    const cat = cats.find((c) => c.id === t.catId);
-    return [
-      t.date,
-      t.type,
-      cat ? cat.name : "Other",
-      t.amount,
-      t.currency || "USD",
-      '"' + (t.note || "") + '"',
-    ].join(",");
+    const cat = cats.find((c) => c.id === (t.cat_id || t.catId));
+    return `${t.date},${t.type},${cat ? cat.name : "Other"},${t.amount},${t.currency || "USD"},"${t.note || ""}"`;
   });
-  const csv = ["Date,Type,Category,Amount,Currency,Note", ...rows].join("\n");
-  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+  const csv = [header, ...rows].join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "flowly.csv";
+  a.download = "vaulta.csv";
   a.click();
   URL.revokeObjectURL(url);
 }
 
-/* ── SIDEBAR ── */
-function Sidebar({
-  view,
-  setView,
-  dark,
-  setDark,
-  user,
-  setUser,
-  setModal,
-  sideOpen,
-  setSideOpen,
-  overdueBills,
-}) {
-  const NAV = [
-    { id: "dashboard", icon: "⬡", label: "Dashboard" },
-    { id: "wallet", icon: "💳", label: "Wallet" },
-    { id: "txns", icon: "↕", label: "Transactions" },
-    { id: "recurring", icon: "🔁", label: "Recurring" },
-    { id: "bills", icon: "📅", label: "Bills" },
-    { id: "goals", icon: "🎯", label: "Goals" },
-    { id: "analytics", icon: "◈", label: "Analytics" },
-  ];
-
-  const sideStyle = {
-    width: 205,
-    background: "var(--panel)",
-    borderRight: "1px solid var(--border)",
-    display: "flex",
-    flexDirection: "column",
-    position: "fixed",
-    top: 0,
-    bottom: 0,
-    left: 0,
-    zIndex: 300,
-    padding: "16px 10px",
-    transition: "transform .28s cubic-bezier(.4,0,.2,1)",
-    transform: sideOpen ? "translateX(0)" : "translateX(-100%)",
-  };
-
-  function nav(id) {
-    setView(id);
-    if (window.innerWidth < 900) setSideOpen(false);
-  }
-
-  return (
-    <div style={sideStyle}>
-      {/* Logo + close button */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 9,
-          paddingLeft: 4,
-          marginBottom: 22,
-        }}
-      >
-        <FlowlyLogo size={30} />
-        <span
-          style={{
-            fontSize: 18,
-            fontWeight: 800,
-            color: "var(--text)",
-            letterSpacing: "-0.04em",
-            fontFamily: "Plus Jakarta Sans,sans-serif",
-          }}
-        >
-          Flowly
-        </span>
-        <button
-          onClick={() => setSideOpen(false)}
-          className="ib"
-          style={{
-            marginLeft: "auto",
-            color: "var(--textMuted)",
-            fontSize: 20,
-            lineHeight: 1,
-            padding: 4,
-          }}
-        >
-          ✕
-        </button>
-      </div>
-
-      <nav style={{ flex: 1, overflowY: "auto" }}>
-        {NAV.map((n) => (
-          <button
-            key={n.id}
-            onClick={() => nav(n.id)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 9,
-              padding: "9px 10px",
-              borderRadius: 9,
-              border: "none",
-              marginBottom: 1,
-              fontSize: 13,
-              fontWeight: 600,
-              width: "100%",
-              cursor: "pointer",
-              transition: "all .2s",
-              fontFamily: "Plus Jakarta Sans,sans-serif",
-              background: view === n.id ? "var(--accentBg)" : "transparent",
-              color: view === n.id ? "var(--accent)" : "var(--textSub)",
-            }}
-          >
-            <span style={{ fontSize: 15 }}>{n.icon}</span>
-            {n.label}
-            {n.id === "bills" && overdueBills > 0 && (
-              <span
-                style={{
-                  marginLeft: "auto",
-                  background: "var(--expense)",
-                  color: "#fff",
-                  borderRadius: "50%",
-                  width: 16,
-                  height: 16,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  fontSize: 9,
-                  fontWeight: 700,
-                }}
-              >
-                {overdueBills}
-              </span>
-            )}
-          </button>
-        ))}
-        <div
-          style={{
-            borderTop: "1px solid var(--border)",
-            marginTop: 8,
-            paddingTop: 8,
-          }}
-        >
-          <button
-            onClick={() => setModal("cats")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 9,
-              padding: "9px 10px",
-              borderRadius: 9,
-              border: "1px dashed var(--border)",
-              marginBottom: 4,
-              fontSize: 13,
-              fontWeight: 600,
-              width: "100%",
-              cursor: "pointer",
-              fontFamily: "Plus Jakarta Sans,sans-serif",
-              background: "transparent",
-              color: "var(--textMuted)",
-            }}
-          >
-            ⊕ Categories
-          </button>
-          <button
-            onClick={() => setModal("budget")}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 9,
-              padding: "9px 10px",
-              borderRadius: 9,
-              border: "1px dashed var(--border)",
-              fontSize: 13,
-              fontWeight: 600,
-              width: "100%",
-              cursor: "pointer",
-              fontFamily: "Plus Jakarta Sans,sans-serif",
-              background: "transparent",
-              color: "var(--textMuted)",
-            }}
-          >
-            🎯 Budgets
-          </button>
-        </div>
-      </nav>
-
-      <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
-        <button
-          onClick={() => setDark((p) => !p)}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "8px 10px",
-            borderRadius: 9,
-            width: "100%",
-            border: "none",
-            cursor: "pointer",
-            fontFamily: "Plus Jakarta Sans,sans-serif",
-            fontSize: 12,
-            fontWeight: 600,
-            marginBottom: 8,
-            background: "var(--card)",
-            color: "var(--textSub)",
-          }}
-        >
-          <span>{dark ? "☀️" : "🌙"}</span> {dark ? "Light Mode" : "Dark Mode"}
-        </button>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            padding: "7px 9px",
-            borderRadius: 9,
-            background: "var(--card)",
-            marginBottom: 6,
-          }}
-        >
-          <div
-            style={{
-              width: 26,
-              height: 26,
-              borderRadius: 7,
-              background: "linear-gradient(135deg,var(--accent),var(--purple))",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 11,
-              fontWeight: 700,
-              color: "#fff",
-              flexShrink: 0,
-            }}
-          >
-            {user.name[0].toUpperCase()}
-          </div>
-          <div style={{ flex: 1, overflow: "hidden" }}>
-            <div
-              style={{
-                fontSize: 12,
-                fontWeight: 600,
-                color: "var(--text)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {user.name}
-            </div>
-            <div
-              style={{
-                fontSize: 10,
-                color: "var(--textMuted)",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {user.email}
-            </div>
-          </div>
-        </div>
-        <button
-          onClick={() => setUser(null)}
-          style={{
-            width: "100%",
-            padding: "7px 10px",
-            borderRadius: 8,
-            border: "none",
-            cursor: "pointer",
-            fontFamily: "Plus Jakarta Sans,sans-serif",
-            fontSize: 12,
-            fontWeight: 600,
-            background: "transparent",
-            color: "var(--textMuted)",
-            textAlign: "left",
-          }}
-        >
-          ← Sign Out
-        </button>
-      </div>
-    </div>
-  );
-}
-
-/* ── MAIN APP ── */
+/* ══════════════════════════════════════════
+   MAIN APP
+══════════════════════════════════════════ */
 export default function App() {
   const [dark, setDark] = useState(true);
   const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true); // initial auth check
   const [view, setView] = useState("dashboard");
-  const [txns, setTxns] = useState(() => mkTxns());
+  const [sideOpen, setSideOpen] = useState(true);
+
+  // Data states
+  const [txns, setTxns] = useState([]);
   const [cats, setCats] = useState(DEF_CATS);
-  const [wallet, setWallet] = useState({
-    cash: 340,
-    bank: 6200,
-    savings: 2800,
-  });
-  const [goals, setGoals] = useState(() => mkGoals());
-  const [recurring, setRecurring] = useState(() => mkRecurring());
-  const [bills, setBills] = useState(() => mkBills());
-  const [budgets, setBudgets] = useState(() => mkBudgets());
+  const [wallet, setWallet] = useState({ cash: 0, bank: 0, savings: 0 });
+  const [goals, setGoals] = useState([]);
+  const [recurring, setRecurring] = useState([]);
+  const [bills, setBills] = useState([]);
+  const [budgets, setBudgets] = useState([]);
   const [currency, setCurrency] = useState("USD");
   const [modal, setModal] = useState(null);
+  const [dataLoading, setDataLoading] = useState(false);
   const [ftype, setFtype] = useState("all");
   const [search, setSearch] = useState("");
-  const [sideOpen, setSideOpen] = useState(true); // open by default on desktop
 
   useEffect(() => {
     applyTheme(dark ? DARK : LIGHT);
   }, [dark]);
 
-  // On small screens start closed
+  // ── Check existing session on load ──
   useEffect(() => {
-    if (window.innerWidth < 900) setSideOpen(false);
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) setUser(session.user);
+      setLoading(false);
+    });
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_e, session) => {
+      setUser(session?.user ?? null);
+    });
+    return () => subscription.unsubscribe();
   }, []);
+
+  // ── Load all user data when logged in ──
+  const loadData = useCallback(async (userId) => {
+    setDataLoading(true);
+    const [txR, catR, walR, goaR, recR, bilR, budR] = await Promise.all([
+      supabase
+        .from("transactions")
+        .select("*")
+        .eq("user_id", userId)
+        .order("date", { ascending: false }),
+      supabase.from("categories").select("*").eq("user_id", userId),
+      supabase.from("wallet").select("*").eq("user_id", userId).single(),
+      supabase.from("goals").select("*").eq("user_id", userId),
+      supabase.from("recurring").select("*").eq("user_id", userId),
+      supabase
+        .from("bills")
+        .select("*")
+        .eq("user_id", userId)
+        .order("due_date"),
+      supabase.from("budgets").select("*").eq("user_id", userId),
+    ]);
+    if (txR.data) setTxns(txR.data);
+    if (catR.data && catR.data.length > 0) setCats([...DEF_CATS, ...catR.data]);
+    if (walR.data)
+      setWallet({
+        cash: walR.data.cash,
+        bank: walR.data.bank,
+        savings: walR.data.savings,
+      });
+    if (goaR.data) setGoals(goaR.data);
+    if (recR.data) setRecurring(recR.data);
+    if (bilR.data) setBills(bilR.data);
+    if (budR.data) setBudgets(budR.data);
+    setDataLoading(false);
+  }, []);
+
+  useEffect(() => {
+    if (user) loadData(user.id);
+  }, [user, loadData]);
 
   const cur = getCur(currency);
   const totInc = useMemo(
@@ -2209,7 +1973,8 @@ export default function App() {
     txns
       .filter((t) => t.type === "expense")
       .forEach((t) => {
-        m[t.catId] = (m[t.catId] || 0) + t.amount;
+        const key = t.cat_id || t.catId;
+        m[key] = (m[key] || 0) + t.amount;
       });
     return Object.entries(m)
       .map(([catId, value]) => ({ catId, value }))
@@ -2220,7 +1985,7 @@ export default function App() {
     () =>
       txns.filter((t) => {
         if (ftype !== "all" && t.type !== ftype) return false;
-        const c = cats.find((x) => x.id === t.catId);
+        const c = cats.find((x) => x.id === (t.cat_id || t.catId));
         if (
           search &&
           !t.note.toLowerCase().includes(search.toLowerCase()) &&
@@ -2232,82 +1997,395 @@ export default function App() {
     [txns, ftype, search, cats],
   );
 
-  const delTxn = (id) => setTxns((p) => p.filter((x) => x.id !== id));
+  async function delTxn(id) {
+    await supabase.from("transactions").delete().eq("id", id);
+    setTxns((prev) => prev.filter((x) => x.id !== id));
+  }
+
+  async function signOut() {
+    await supabase.auth.signOut();
+    setUser(null);
+    setTxns([]);
+    setGoals([]);
+    setRecurring([]);
+    setBills([]);
+    setBudgets([]);
+    setCats(DEF_CATS);
+    setWallet({ cash: 0, bank: 0, savings: 0 });
+  }
+
+  async function updateGoalSaved(id, val) {
+    setGoals((prev) =>
+      prev.map((g) => (g.id === id ? { ...g, saved: +val || 0 } : g)),
+    );
+    await supabase
+      .from("goals")
+      .update({ saved: +val || 0 })
+      .eq("id", id);
+  }
+
+  async function deleteGoal(id) {
+    await supabase.from("goals").delete().eq("id", id);
+    setGoals((prev) => prev.filter((x) => x.id !== id));
+  }
+
+  async function deleteRecurring(id) {
+    await supabase.from("recurring").delete().eq("id", id);
+    setRecurring((prev) => prev.filter((x) => x.id !== id));
+  }
+
+  async function toggleBillPaid(id, current) {
+    await supabase.from("bills").update({ paid: !current }).eq("id", id);
+    setBills((prev) =>
+      prev.map((b) => (b.id === id ? { ...b, paid: !current } : b)),
+    );
+  }
+
+  async function deleteBill(id) {
+    await supabase.from("bills").delete().eq("id", id);
+    setBills((prev) => prev.filter((x) => x.id !== id));
+  }
+
   const upcomingBills = bills
     .filter((b) => !b.paid)
-    .sort((a, b) => new Date(a.dueDate) - new Date(b.dueDate));
-  const overdueBills = upcomingBills.filter((b) => daysUntil(b.dueDate) < 0);
-
+    .sort(
+      (a, b) =>
+        new Date(a.due_date || a.dueDate) - new Date(b.due_date || b.dueDate),
+    );
+  const overdueBills = upcomingBills.filter(
+    (b) => daysUntil(b.due_date || b.dueDate) < 0,
+  );
   const budgetAlerts = budgets.filter((b) => {
-    if (b.limit <= 0) return false;
+    if ((b.limit_amount || b.limit || 0) <= 0) return false;
     const spent = txns
-      .filter((t) => t.type === "expense" && t.catId === b.catId)
+      .filter((t) => t.type === "expense" && (t.cat_id || t.catId) === b.cat_id)
       .reduce((s, t) => s + t.amount, 0);
-    return spent / b.limit > 0.8;
+    return spent / (b.limit_amount || b.limit) > 0.8;
   });
 
-  const VIEWS = {
-    dashboard: "Dashboard",
-    wallet: "Wallet 💳",
-    txns: "Transactions",
-    recurring: "Recurring 🔁",
-    bills: "Bill Reminders 📅",
-    goals: "Savings Goals 🎯",
-    analytics: "Analytics 📊",
-  };
+  const userName =
+    user?.user_metadata?.full_name || user?.email?.split("@")[0] || "User";
 
-  // Margin left only when sidebar is open (not on very small screens)
-  const mainMargin = sideOpen ? 205 : 0;
+  const NAV = [
+    { id: "dashboard", icon: "⬡", label: "Dashboard" },
+    { id: "wallet", icon: "💳", label: "Wallet" },
+    { id: "txns", icon: "↕", label: "Transactions" },
+    { id: "recurring", icon: "🔁", label: "Recurring" },
+    { id: "bills", icon: "📅", label: "Bills" },
+    { id: "goals", icon: "🎯", label: "Goals" },
+    { id: "analytics", icon: "◈", label: "Analytics" },
+  ];
 
-  if (!user) return <AuthScreen onLogin={setUser} />;
+  // ── Initial load spinner ──
+  if (loading)
+    return (
+      <div
+        style={{
+          minHeight: "100vh",
+          background: "var(--bg)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <div style={{ textAlign: "center" }}>
+          <VaultaLogo size={48} />
+          <div
+            style={{
+              marginTop: 16,
+              fontSize: 13,
+              color: "var(--textMuted)",
+              fontFamily: "Plus Jakarta Sans,sans-serif",
+            }}
+          >
+            Loading Vaulta...
+          </div>
+        </div>
+      </div>
+    );
+
+  if (!user) return <AuthScreen onLogin={(u) => setUser(u)} />;
 
   return (
     <div
       style={{
         minHeight: "100vh",
         background: "var(--bg)",
+        display: "flex",
         fontFamily: "Plus Jakarta Sans,sans-serif",
       }}
     >
-      {/* Overlay when sidebar open on small screen */}
-      {sideOpen && (
-        <div
-          onClick={() => setSideOpen(false)}
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,.5)",
-            zIndex: 250,
-            display: window.innerWidth < 900 ? "block" : "none",
-          }}
-        />
-      )}
-
-      <Sidebar
-        view={view}
-        setView={setView}
-        dark={dark}
-        setDark={setDark}
-        user={user}
-        setUser={setUser}
-        setModal={setModal}
-        sideOpen={sideOpen}
-        setSideOpen={setSideOpen}
-        overdueBills={overdueBills.length}
+      {/* Mobile overlay */}
+      <div
+        className="overlay-bg"
+        onClick={() => setSideOpen(false)}
+        style={{ display: sideOpen ? "block" : "none", zIndex: 150 }}
       />
 
-      {/* MAIN */}
+      {/* ── SIDEBAR ── */}
       <div
+        className={"sidebar" + (sideOpen ? " open" : "")}
         style={{
-          marginLeft: mainMargin,
-          transition: "margin .28s cubic-bezier(.4,0,.2,1)",
-          minHeight: "100vh",
-          padding: "20px 24px",
+          width: 205,
+          background: "var(--panel)",
+          borderRight: "1px solid var(--border)",
+          display: "flex",
+          flexDirection: "column",
+          position: "fixed",
+          top: 0,
+          bottom: 0,
+          left: 0,
+          zIndex: 200,
+          padding: "16px 10px",
+          transition: "transform .28s cubic-bezier(.4,0,.2,1)",
         }}
       >
-        {/* Top bar */}
         <div
-          className="fu"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 9,
+            paddingLeft: 4,
+            marginBottom: 22,
+          }}
+        >
+          <VaultaLogo size={30} />
+          <span
+            style={{
+              fontSize: 18,
+              fontWeight: 800,
+              color: "var(--text)",
+              letterSpacing: "-0.04em",
+            }}
+          >
+            Vaulta
+          </span>
+          <button
+            onClick={() => setSideOpen(false)}
+            className="ib"
+            style={{
+              marginLeft: "auto",
+              color: "var(--textMuted)",
+              fontSize: 18,
+            }}
+          >
+            ✕
+          </button>
+        </div>
+
+        <nav style={{ flex: 1, overflowY: "auto" }}>
+          {NAV.map((n) => (
+            <button
+              key={n.id}
+              onClick={() => {
+                setView(n.id);
+                setSideOpen(false);
+              }}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 9,
+                padding: "9px 10px",
+                borderRadius: 9,
+                border: "none",
+                marginBottom: 1,
+                fontSize: 13,
+                fontWeight: 600,
+                width: "100%",
+                cursor: "pointer",
+                transition: "all .2s",
+                fontFamily: "Plus Jakarta Sans,sans-serif",
+                background: view === n.id ? "var(--accentBg)" : "transparent",
+                color: view === n.id ? "var(--accent)" : "var(--textSub)",
+              }}
+            >
+              <span style={{ fontSize: 15 }}>{n.icon}</span>
+              {n.label}
+              {n.id === "bills" && overdueBills.length > 0 && (
+                <span
+                  style={{
+                    marginLeft: "auto",
+                    background: "var(--expense)",
+                    color: "#fff",
+                    borderRadius: "50%",
+                    width: 16,
+                    height: 16,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 9,
+                    fontWeight: 700,
+                  }}
+                >
+                  {overdueBills.length}
+                </span>
+              )}
+            </button>
+          ))}
+          <div
+            style={{
+              borderTop: "1px solid var(--border)",
+              marginTop: 8,
+              paddingTop: 8,
+            }}
+          >
+            <button
+              onClick={() => setModal("cats")}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 9,
+                padding: "9px 10px",
+                borderRadius: 9,
+                border: "1px dashed var(--border)",
+                marginBottom: 4,
+                fontSize: 13,
+                fontWeight: 600,
+                width: "100%",
+                cursor: "pointer",
+                fontFamily: "Plus Jakarta Sans,sans-serif",
+                background: "transparent",
+                color: "var(--textMuted)",
+              }}
+            >
+              ⊕ Categories
+            </button>
+            <button
+              onClick={() => setModal("budget")}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 9,
+                padding: "9px 10px",
+                borderRadius: 9,
+                border: "1px dashed var(--border)",
+                fontSize: 13,
+                fontWeight: 600,
+                width: "100%",
+                cursor: "pointer",
+                fontFamily: "Plus Jakarta Sans,sans-serif",
+                background: "transparent",
+                color: "var(--textMuted)",
+              }}
+            >
+              🎯 Budgets
+            </button>
+          </div>
+        </nav>
+
+        <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
+          <button
+            onClick={() => setDark((p) => !p)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "8px 10px",
+              borderRadius: 9,
+              width: "100%",
+              border: "none",
+              cursor: "pointer",
+              fontFamily: "Plus Jakarta Sans,sans-serif",
+              fontSize: 12,
+              fontWeight: 600,
+              marginBottom: 8,
+              background: "var(--card)",
+              color: "var(--textSub)",
+            }}
+          >
+            <span>{dark ? "☀️" : "🌙"}</span>
+            {dark ? "Light Mode" : "Dark Mode"}
+          </button>
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "7px 9px",
+              borderRadius: 9,
+              background: "var(--card)",
+              marginBottom: 6,
+            }}
+          >
+            <div
+              style={{
+                width: 26,
+                height: 26,
+                borderRadius: 7,
+                background:
+                  "linear-gradient(135deg,var(--accent),var(--purple))",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: 11,
+                fontWeight: 700,
+                color: "#fff",
+                flexShrink: 0,
+              }}
+            >
+              {userName[0].toUpperCase()}
+            </div>
+            <div style={{ flex: 1, overflow: "hidden" }}>
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  color: "var(--text)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {userName}
+              </div>
+              <div
+                style={{
+                  fontSize: 10,
+                  color: "var(--textMuted)",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {user.email}
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={signOut}
+            style={{
+              width: "100%",
+              padding: "7px 10px",
+              borderRadius: 8,
+              border: "none",
+              cursor: "pointer",
+              fontFamily: "Plus Jakarta Sans,sans-serif",
+              fontSize: 12,
+              fontWeight: 600,
+              background: "transparent",
+              color: "var(--textMuted)",
+              textAlign: "left",
+            }}
+          >
+            ← Sign Out
+          </button>
+        </div>
+      </div>
+
+      {/* ── MAIN ── */}
+      <div
+        className="main"
+        style={{
+          marginLeft: sideOpen ? 205 : 0,
+          flex: 1,
+          padding: "20px 24px",
+          overflowX: "hidden",
+          transition: "margin .28s cubic-bezier(.4,0,.2,1)",
+        }}
+      >
+        {/* Topbar */}
+        <div
+          className="fu topbar"
           style={{
             display: "flex",
             justifyContent: "space-between",
@@ -2317,27 +2395,18 @@ export default function App() {
             flexWrap: "wrap",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            {/* Hamburger / toggle button — always visible */}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <button
+              className="ib"
               onClick={() => setSideOpen((p) => !p)}
               style={{
-                width: 38,
-                height: 38,
-                borderRadius: 9,
-                background: "var(--panel)",
-                border: "1px solid var(--border)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                cursor: "pointer",
-                flexShrink: 0,
-                transition: "all .2s",
-                fontSize: 17,
+                fontSize: 22,
                 color: "var(--text)",
+                padding: 4,
+                display: "flex",
               }}
             >
-              {sideOpen ? "✕" : "☰"}
+              ☰
             </button>
             <div>
               <div
@@ -2348,7 +2417,14 @@ export default function App() {
                   letterSpacing: "-0.03em",
                 }}
               >
-                {VIEWS[view] || "Flowly"}
+                {view === "dashboard" &&
+                  "Hey " + userName.split(" ")[0] + " 👋"}
+                {view === "wallet" && "Wallet 💳"}
+                {view === "txns" && "Transactions"}
+                {view === "recurring" && "Recurring 🔁"}
+                {view === "bills" && "Bills 📅"}
+                {view === "goals" && "Goals 🎯"}
+                {view === "analytics" && "Analytics 📊"}
               </div>
               <div
                 style={{ fontSize: 12, color: "var(--textSub)", marginTop: 1 }}
@@ -2421,450 +2497,562 @@ export default function App() {
           </div>
         </div>
 
-        {/* ═══ DASHBOARD ═══ */}
-        {view === "dashboard" && (
-          <div>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))",
-                gap: 12,
-                marginBottom: 18,
-              }}
-            >
-              <StatCard
-                label="Net Balance"
-                value={fmtC(bal, currency)}
-                sub={savRate + "% savings rate"}
-                accent={bal >= 0 ? "var(--income)" : "var(--expense)"}
-                icon="💎"
-              />
-              <StatCard
-                label="Income"
-                value={fmtC(totInc, currency)}
-                sub={
-                  txns.filter((t) => t.type === "income").length + " entries"
-                }
-                accent="var(--income)"
-                icon="⬆"
-                delay="1"
-              />
-              <StatCard
-                label="Expenses"
-                value={fmtC(totExp, currency)}
-                sub={
-                  txns.filter((t) => t.type === "expense").length + " entries"
-                }
-                accent="var(--expense)"
-                icon="⬇"
-                delay="2"
-              />
-              <StatCard
-                label="Wealth"
-                value={fmtC(wTotal, currency)}
-                sub="wallet total"
-                accent="var(--amber)"
-                icon="🏦"
-                delay="3"
-              />
-            </div>
+        {dataLoading && <Spinner text="Loading your data..." />}
 
-            {budgetAlerts.length > 0 && (
-              <div
-                className="fu1"
-                style={{
-                  background: "var(--expenseBg)",
-                  border: "1px solid var(--expense)",
-                  borderRadius: 12,
-                  padding: "11px 15px",
-                  marginBottom: 12,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                }}
-              >
-                <span style={{ fontSize: 17 }}>⚠️</span>
-                <div style={{ flex: 1 }}>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 700,
-                      color: "var(--expense)",
-                      fontFamily: "Plus Jakarta Sans,sans-serif",
-                    }}
-                  >
-                    Budget Alert
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: "var(--textSub)",
-                      fontFamily: "Plus Jakarta Sans,sans-serif",
-                    }}
-                  >
-                    {budgetAlerts
-                      .map((b) => {
-                        const cat = cats.find((c) => c.id === b.catId);
-                        const s = txns
-                          .filter(
-                            (t) => t.type === "expense" && t.catId === b.catId,
-                          )
-                          .reduce((x, t) => x + t.amount, 0);
-                        return (
-                          (cat ? cat.name : "") +
-                          " " +
-                          cur.sym +
-                          s.toFixed(0) +
-                          " / " +
-                          cur.sym +
-                          b.limit
-                        );
-                      })
-                      .join("  ·  ")}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {upcomingBills.length > 0 && (
-              <div
-                className="fu1"
-                style={{
-                  background: "var(--accentBg)",
-                  border: "1px solid rgba(99,102,241,.25)",
-                  borderRadius: 12,
-                  padding: "11px 15px",
-                  marginBottom: 12,
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 10,
-                }}
-              >
-                <span style={{ fontSize: 17 }}>📅</span>
-                <div style={{ flex: 1 }}>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 700,
-                      color: "var(--accent)",
-                      fontFamily: "Plus Jakarta Sans,sans-serif",
-                    }}
-                  >
-                    Upcoming Bills
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: "var(--textSub)",
-                      fontFamily: "Plus Jakarta Sans,sans-serif",
-                    }}
-                  >
-                    {upcomingBills
-                      .slice(0, 3)
-                      .map((b) => {
-                        const d = daysUntil(b.dueDate);
-                        return (
-                          b.note +
-                          " " +
-                          (d < 0
-                            ? "OVERDUE"
-                            : d === 0
-                              ? "today"
-                              : "in " + d + "d")
-                        );
-                      })
-                      .join("  ·  ")}
-                  </div>
-                </div>
-                <Btn size="sm" variant="ghost" onClick={() => setView("bills")}>
-                  View →
-                </Btn>
-              </div>
-            )}
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))",
-                gap: 14,
-                marginBottom: 14,
-              }}
-            >
-              <Card className="fu1">
+        {!dataLoading && (
+          <>
+            {/* ═══ DASHBOARD ═══ */}
+            {view === "dashboard" && (
+              <>
                 <div
+                  className="g4"
                   style={{
-                    fontSize: 14,
-                    fontWeight: 700,
-                    color: "var(--text)",
+                    display: "grid",
+                    gridTemplateColumns: "repeat(4,1fr)",
+                    gap: 12,
+                    marginBottom: 18,
+                  }}
+                >
+                  <StatCard
+                    label="Net Balance"
+                    value={fmtC(bal, currency)}
+                    sub={savRate + "% savings rate"}
+                    accent={bal >= 0 ? "var(--income)" : "var(--expense)"}
+                    icon="💎"
+                  />
+                  <StatCard
+                    label="Income"
+                    value={fmtC(totInc, currency)}
+                    sub={
+                      txns.filter((t) => t.type === "income").length +
+                      " entries"
+                    }
+                    accent="var(--income)"
+                    icon="⬆"
+                    delay="1"
+                  />
+                  <StatCard
+                    label="Expenses"
+                    value={fmtC(totExp, currency)}
+                    sub={
+                      txns.filter((t) => t.type === "expense").length +
+                      " entries"
+                    }
+                    accent="var(--expense)"
+                    icon="⬇"
+                    delay="2"
+                  />
+                  <StatCard
+                    label="Wealth"
+                    value={fmtC(wTotal, currency)}
+                    sub="wallet total"
+                    accent="var(--amber)"
+                    icon="🏦"
+                    delay="3"
+                  />
+                </div>
+
+                {budgetAlerts.length > 0 && (
+                  <div
+                    className="fu1"
+                    style={{
+                      background: "var(--expenseBg)",
+                      border: "1px solid var(--expense)",
+                      borderRadius: 12,
+                      padding: "11px 15px",
+                      marginBottom: 12,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                    }}
+                  >
+                    <span style={{ fontSize: 17 }}>⚠️</span>
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 700,
+                          color: "var(--expense)",
+                          fontFamily: "Plus Jakarta Sans,sans-serif",
+                        }}
+                      >
+                        Budget Alert
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: "var(--textSub)",
+                          fontFamily: "Plus Jakarta Sans,sans-serif",
+                        }}
+                      >
+                        {budgetAlerts
+                          .map((b) => {
+                            const cat = cats.find((c) => c.id === b.cat_id);
+                            const s = txns
+                              .filter(
+                                (t) =>
+                                  t.type === "expense" &&
+                                  (t.cat_id || t.catId) === b.cat_id,
+                              )
+                              .reduce((x, t) => x + t.amount, 0);
+                            return (
+                              (cat ? cat.name : "") +
+                              " : " +
+                              cur.sym +
+                              s.toFixed(0) +
+                              " / " +
+                              cur.sym +
+                              (b.limit_amount || b.limit)
+                            );
+                          })
+                          .join("  ·  ")}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {upcomingBills.length > 0 && (
+                  <div
+                    className="fu1"
+                    style={{
+                      background: "var(--accentBg)",
+                      border: "1px solid rgba(99,102,241,.25)",
+                      borderRadius: 12,
+                      padding: "11px 15px",
+                      marginBottom: 12,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                    }}
+                  >
+                    <span style={{ fontSize: 17 }}>📅</span>
+                    <div style={{ flex: 1 }}>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 700,
+                          color: "var(--accent)",
+                          fontFamily: "Plus Jakarta Sans,sans-serif",
+                        }}
+                      >
+                        Upcoming Bills
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: "var(--textSub)",
+                          fontFamily: "Plus Jakarta Sans,sans-serif",
+                        }}
+                      >
+                        {upcomingBills
+                          .slice(0, 3)
+                          .map((b) => {
+                            const d = daysUntil(b.due_date || b.dueDate);
+                            return (
+                              b.note +
+                              " " +
+                              (d < 0
+                                ? "OVERDUE"
+                                : d === 0
+                                  ? "today"
+                                  : "in " + d + "d")
+                            );
+                          })
+                          .join("  ·  ")}
+                      </div>
+                    </div>
+                    <Btn
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setView("bills")}
+                    >
+                      View →
+                    </Btn>
+                  </div>
+                )}
+
+                <div
+                  className="g2"
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "3fr 2fr",
+                    gap: 14,
                     marginBottom: 14,
                   }}
                 >
-                  Income vs Expenses
-                </div>
-                <ResponsiveContainer width="100%" height={190}>
-                  <AreaChart data={MONTHLY}>
-                    <defs>
-                      <linearGradient id="gI" x1="0" y1="0" x2="0" y2="1">
-                        <stop
-                          offset="5%"
-                          stopColor="#34d399"
-                          stopOpacity={0.2}
-                        />
-                        <stop
-                          offset="95%"
-                          stopColor="#34d399"
-                          stopOpacity={0}
-                        />
-                      </linearGradient>
-                      <linearGradient id="gE" x1="0" y1="0" x2="0" y2="1">
-                        <stop
-                          offset="5%"
-                          stopColor="#f87171"
-                          stopOpacity={0.2}
-                        />
-                        <stop
-                          offset="95%"
-                          stopColor="#f87171"
-                          stopOpacity={0}
-                        />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      stroke="var(--border)"
-                    />
-                    <XAxis
-                      dataKey="m"
-                      tick={{
-                        fill: "var(--textMuted)",
-                        fontSize: 10,
-                        fontFamily: "JetBrains Mono",
+                  <Card className="fu1">
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: "var(--text)",
+                        marginBottom: 14,
                       }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      tick={{
-                        fill: "var(--textMuted)",
-                        fontSize: 10,
-                        fontFamily: "JetBrains Mono",
-                      }}
-                      axisLine={false}
-                      tickLine={false}
-                      tickFormatter={(v) => fmtK(v, cur.sym)}
-                    />
-                    <Tooltip
-                      contentStyle={ttStyle}
-                      formatter={(v) => [fmtC(v, currency)]}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="inc"
-                      stroke="#34d399"
-                      strokeWidth={2}
-                      fill="url(#gI)"
-                      name="Income"
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="exp"
-                      stroke="#f87171"
-                      strokeWidth={2}
-                      fill="url(#gE)"
-                      name="Expenses"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </Card>
-
-              <Card className="fu2">
-                <div
-                  style={{
-                    fontSize: 14,
-                    fontWeight: 700,
-                    color: "var(--text)",
-                    marginBottom: 12,
-                  }}
-                >
-                  By Category
-                </div>
-                <ResponsiveContainer width="100%" height={140}>
-                  <PieChart>
-                    <Pie
-                      data={catExp.slice(0, 6)}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={38}
-                      outerRadius={62}
-                      paddingAngle={3}
-                      dataKey="value"
                     >
-                      {catExp.slice(0, 6).map((e, i) => {
-                        const c = cats.find((x) => x.id === e.catId);
-                        return <Cell key={i} fill={c ? c.color : "#6b7280"} />;
-                      })}
-                    </Pie>
-                    <Tooltip
-                      contentStyle={ttStyle}
-                      formatter={(v, n, p) => [
-                        fmtC(v, currency),
-                        (
-                          cats.find((c) => c.id === p.payload.catId) || {
-                            name: "Other",
-                          }
-                        ).name,
-                      ]}
-                    />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div
-                  style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: "3px 8px",
-                    marginTop: 4,
-                  }}
-                >
-                  {catExp.slice(0, 6).map((e) => {
-                    const c = cats.find((x) => x.id === e.catId);
-                    return (
-                      <div
-                        key={e.catId}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 4,
-                        }}
-                      >
-                        <div
-                          style={{
-                            width: 6,
-                            height: 6,
-                            borderRadius: 2,
-                            background: c ? c.color : "#6b7280",
-                          }}
+                      Income vs Expenses
+                    </div>
+                    <ResponsiveContainer width="100%" height={190}>
+                      <AreaChart data={MONTHLY_DATA}>
+                        <defs>
+                          <linearGradient id="gI" x1="0" y1="0" x2="0" y2="1">
+                            <stop
+                              offset="5%"
+                              stopColor="#34d399"
+                              stopOpacity={0.2}
+                            />
+                            <stop
+                              offset="95%"
+                              stopColor="#34d399"
+                              stopOpacity={0}
+                            />
+                          </linearGradient>
+                          <linearGradient id="gE" x1="0" y1="0" x2="0" y2="1">
+                            <stop
+                              offset="5%"
+                              stopColor="#f87171"
+                              stopOpacity={0.2}
+                            />
+                            <stop
+                              offset="95%"
+                              stopColor="#f87171"
+                              stopOpacity={0}
+                            />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          stroke="var(--border)"
                         />
-                        <span
-                          style={{
+                        <XAxis
+                          dataKey="m"
+                          tick={{
+                            fill: "var(--textMuted)",
                             fontSize: 10,
-                            color: "var(--textMuted)",
-                            fontFamily: "Plus Jakarta Sans,sans-serif",
+                            fontFamily: "JetBrains Mono",
                           }}
+                          axisLine={false}
+                          tickLine={false}
+                        />
+                        <YAxis
+                          tick={{
+                            fill: "var(--textMuted)",
+                            fontSize: 10,
+                            fontFamily: "JetBrains Mono",
+                          }}
+                          axisLine={false}
+                          tickLine={false}
+                          tickFormatter={(v) => fmtK(v, cur.sym)}
+                        />
+                        <Tooltip
+                          contentStyle={ttStyle}
+                          formatter={(v) => [fmtC(v, currency)]}
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="inc"
+                          stroke="#34d399"
+                          strokeWidth={2}
+                          fill="url(#gI)"
+                          name="Income"
+                        />
+                        <Area
+                          type="monotone"
+                          dataKey="exp"
+                          stroke="#f87171"
+                          strokeWidth={2}
+                          fill="url(#gE)"
+                          name="Expenses"
+                        />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </Card>
+                  <Card className="fu2">
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: "var(--text)",
+                        marginBottom: 12,
+                      }}
+                    >
+                      By Category
+                    </div>
+                    <ResponsiveContainer width="100%" height={140}>
+                      <PieChart>
+                        <Pie
+                          data={catExp.slice(0, 6)}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={38}
+                          outerRadius={62}
+                          paddingAngle={3}
+                          dataKey="value"
                         >
-                          {c ? c.name : "Other"}
-                        </span>
-                      </div>
-                    );
-                  })}
+                          {catExp.slice(0, 6).map((e, i) => {
+                            const c = cats.find((x) => x.id === e.catId);
+                            return (
+                              <Cell key={i} fill={c ? c.color : "#6b7280"} />
+                            );
+                          })}
+                        </Pie>
+                        <Tooltip
+                          contentStyle={ttStyle}
+                          formatter={(v, n, p) => [
+                            fmtC(v, currency),
+                            (
+                              cats.find((c) => c.id === p.payload.catId) || {
+                                name: "Other",
+                              }
+                            ).name,
+                          ]}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: "3px 8px",
+                        marginTop: 4,
+                      }}
+                    >
+                      {catExp.slice(0, 6).map((e) => {
+                        const c = cats.find((x) => x.id === e.catId);
+                        return (
+                          <div
+                            key={e.catId}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 4,
+                            }}
+                          >
+                            <div
+                              style={{
+                                width: 6,
+                                height: 6,
+                                borderRadius: 2,
+                                background: c ? c.color : "#6b7280",
+                              }}
+                            />
+                            <span
+                              style={{
+                                fontSize: 10,
+                                color: "var(--textMuted)",
+                                fontFamily: "Plus Jakarta Sans,sans-serif",
+                              }}
+                            >
+                              {c ? c.name : "Other"}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </Card>
                 </div>
-              </Card>
-            </div>
 
-            <Card className="fu3">
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: 12,
-                }}
-              >
+                <Card className="fu3">
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      marginBottom: 12,
+                    }}
+                  >
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: "var(--text)",
+                      }}
+                    >
+                      Recent Transactions
+                    </div>
+                    <Btn
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setView("txns")}
+                    >
+                      View all →
+                    </Btn>
+                  </div>
+                  {txns.length === 0 ? (
+                    <div
+                      style={{
+                        textAlign: "center",
+                        padding: 30,
+                        color: "var(--textMuted)",
+                        fontFamily: "Plus Jakarta Sans,sans-serif",
+                      }}
+                    >
+                      No transactions yet — add your first one!
+                    </div>
+                  ) : (
+                    txns
+                      .slice(0, 6)
+                      .map((t) => (
+                        <TxnRow
+                          key={t.id}
+                          t={t}
+                          cats={cats}
+                          currency={currency}
+                          onDelete={delTxn}
+                        />
+                      ))
+                  )}
+                </Card>
+              </>
+            )}
+
+            {/* ═══ WALLET ═══ */}
+            {view === "wallet" && (
+              <>
                 <div
+                  className="g4"
                   style={{
-                    fontSize: 14,
-                    fontWeight: 700,
-                    color: "var(--text)",
+                    display: "grid",
+                    gridTemplateColumns: "repeat(4,1fr)",
+                    gap: 12,
+                    marginBottom: 18,
                   }}
                 >
-                  Recent Transactions
+                  <StatCard
+                    label="Cash"
+                    value={fmtC(wallet.cash, currency)}
+                    accent="var(--amber)"
+                    icon="💵"
+                  />
+                  <StatCard
+                    label="Bank"
+                    value={fmtC(wallet.bank, currency)}
+                    accent="var(--blue)"
+                    icon="🏦"
+                    delay="1"
+                  />
+                  <StatCard
+                    label="Savings"
+                    value={fmtC(wallet.savings, currency)}
+                    accent="var(--income)"
+                    icon="🐷"
+                    delay="2"
+                  />
+                  <StatCard
+                    label="Net Worth"
+                    value={fmtC(wTotal + bal, currency)}
+                    accent="var(--accent)"
+                    icon="💎"
+                    delay="3"
+                  />
                 </div>
-                <Btn variant="ghost" size="sm" onClick={() => setView("txns")}>
-                  View all →
-                </Btn>
-              </div>
-              {txns.slice(0, 6).map((t) => (
-                <TxnRow
-                  key={t.id}
-                  t={t}
-                  cats={cats}
-                  currency={currency}
-                  onDelete={delTxn}
-                />
-              ))}
-            </Card>
-          </div>
-        )}
-
-        {/* ═══ WALLET ═══ */}
-        {view === "wallet" && (
-          <div>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))",
-                gap: 12,
-                marginBottom: 18,
-              }}
-            >
-              <StatCard
-                label="Cash"
-                value={fmtC(wallet.cash, currency)}
-                accent="var(--amber)"
-                icon="💵"
-              />
-              <StatCard
-                label="Bank"
-                value={fmtC(wallet.bank, currency)}
-                accent="var(--blue)"
-                icon="🏦"
-                delay="1"
-              />
-              <StatCard
-                label="Savings"
-                value={fmtC(wallet.savings, currency)}
-                accent="var(--income)"
-                icon="🐷"
-                delay="2"
-              />
-              <StatCard
-                label="Net Worth"
-                value={fmtC(wTotal + bal, currency)}
-                accent="var(--accent)"
-                icon="💎"
-                delay="3"
-              />
-            </div>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))",
-                gap: 14,
-              }}
-            >
-              <Card className="fu1">
                 <div
+                  className="g2"
                   style={{
-                    fontSize: 14,
-                    fontWeight: 700,
-                    color: "var(--text)",
-                    marginBottom: 16,
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 14,
                   }}
                 >
-                  Wallet Breakdown
-                </div>
-                {[
-                  { l: "Cash", v: wallet.cash, c: "var(--amber)" },
-                  { l: "Bank", v: wallet.bank, c: "var(--blue)" },
-                  { l: "Savings", v: wallet.savings, c: "var(--income)" },
-                ].map((w) => {
-                  const pct = wTotal ? ((w.v / wTotal) * 100).toFixed(1) : 0;
-                  return (
-                    <div key={w.l} style={{ marginBottom: 13 }}>
+                  <Card className="fu1">
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: "var(--text)",
+                        marginBottom: 16,
+                      }}
+                    >
+                      Breakdown
+                    </div>
+                    {[
+                      { l: "Cash", v: wallet.cash, c: "var(--amber)" },
+                      { l: "Bank", v: wallet.bank, c: "var(--blue)" },
+                      { l: "Savings", v: wallet.savings, c: "var(--income)" },
+                    ].map((w) => {
+                      const p = wTotal ? ((w.v / wTotal) * 100).toFixed(1) : 0;
+                      return (
+                        <div key={w.l} style={{ marginBottom: 13 }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              marginBottom: 5,
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontSize: 13,
+                                color: "var(--text)",
+                                fontFamily: "Plus Jakarta Sans,sans-serif",
+                              }}
+                            >
+                              {w.l}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: 12,
+                                color: "var(--textSub)",
+                                fontFamily: "JetBrains Mono,monospace",
+                              }}
+                            >
+                              {fmtC(w.v, currency)} · {p}%
+                            </span>
+                          </div>
+                          <div
+                            style={{
+                              height: 6,
+                              background: "var(--card)",
+                              borderRadius: 3,
+                              overflow: "hidden",
+                            }}
+                          >
+                            <div
+                              style={{
+                                height: "100%",
+                                width: p + "%",
+                                background: w.c,
+                                borderRadius: 3,
+                                transition: "width .6s ease",
+                              }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                    <div style={{ marginTop: 16 }}>
+                      <Btn variant="outline" onClick={() => setModal("wallet")}>
+                        ✏️ Update Balances
+                      </Btn>
+                    </div>
+                  </Card>
+                  <Card className="fu2">
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: "var(--text)",
+                        marginBottom: 16,
+                      }}
+                    >
+                      Cash Flow
+                    </div>
+                    {[
+                      { l: "💰 Wallet", v: wTotal, c: "var(--text)" },
+                      { l: "⬆ Income", v: totInc, c: "var(--income)" },
+                      { l: "⬇ Expenses", v: totExp, c: "var(--expense)" },
+                      {
+                        l: "📊 Net Flow",
+                        v: bal,
+                        c: bal >= 0 ? "var(--income)" : "var(--expense)",
+                      },
+                    ].map((r) => (
                       <div
+                        key={r.l}
                         style={{
                           display: "flex",
                           justifyContent: "space-between",
-                          marginBottom: 5,
+                          padding: "9px 0",
+                          borderBottom: "1px solid var(--border)",
                         }}
                       >
                         <span
@@ -2874,1017 +3062,953 @@ export default function App() {
                             fontFamily: "Plus Jakarta Sans,sans-serif",
                           }}
                         >
-                          {w.l}
+                          {r.l}
                         </span>
                         <span
                           style={{
-                            fontSize: 12,
-                            color: "var(--textSub)",
+                            fontSize: 13,
+                            fontWeight: 600,
+                            color: r.c,
                             fontFamily: "JetBrains Mono,monospace",
                           }}
                         >
-                          {fmtC(w.v, currency)} · {pct}%
+                          {fmtC(r.v, currency)}
                         </span>
                       </div>
-                      <div
-                        style={{
-                          height: 6,
-                          background: "var(--card)",
-                          borderRadius: 3,
-                          overflow: "hidden",
-                        }}
-                      >
-                        <div
-                          style={{
-                            height: "100%",
-                            width: pct + "%",
-                            background: w.c,
-                            borderRadius: 3,
-                            transition: "width .6s ease",
-                          }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-                <div style={{ marginTop: 16 }}>
-                  <Btn variant="outline" onClick={() => setModal("wallet")}>
-                    ✏️ Update Balances
-                  </Btn>
+                    ))}
+                  </Card>
                 </div>
-              </Card>
-              <Card className="fu2">
-                <div
-                  style={{
-                    fontSize: 14,
-                    fontWeight: 700,
-                    color: "var(--text)",
-                    marginBottom: 16,
-                  }}
-                >
-                  Cash Flow
-                </div>
-                {[
-                  { l: "💰 Wallet Total", v: wTotal, c: "var(--text)" },
-                  { l: "⬆ Income", v: totInc, c: "var(--income)" },
-                  { l: "⬇ Expenses", v: totExp, c: "var(--expense)" },
-                  {
-                    l: "📊 Net Flow",
-                    v: bal,
-                    c: bal >= 0 ? "var(--income)" : "var(--expense)",
-                  },
-                ].map((r) => (
-                  <div
-                    key={r.l}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      padding: "9px 0",
-                      borderBottom: "1px solid var(--border)",
-                    }}
-                  >
-                    <span
-                      style={{
-                        fontSize: 13,
-                        color: "var(--text)",
-                        fontFamily: "Plus Jakarta Sans,sans-serif",
-                      }}
-                    >
-                      {r.l}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 600,
-                        color: r.c,
-                        fontFamily: "JetBrains Mono,monospace",
-                      }}
-                    >
-                      {fmtC(r.v, currency)}
-                    </span>
-                  </div>
-                ))}
-              </Card>
-            </div>
-          </div>
-        )}
-
-        {/* ═══ TRANSACTIONS ═══ */}
-        {view === "txns" && (
-          <div>
-            <div
-              className="fu"
-              style={{
-                display: "flex",
-                gap: 10,
-                marginBottom: 14,
-                flexWrap: "wrap",
-              }}
-            >
-              <div style={{ flex: 1, minWidth: 160 }}>
-                <Field
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="🔍 Search transactions..."
-                />
-              </div>
-              <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
-                {["all", "income", "expense"].map((f) => (
-                  <button
-                    key={f}
-                    onClick={() => setFtype(f)}
-                    style={{
-                      padding: "9px 13px",
-                      borderRadius: 9,
-                      border: "1px solid",
-                      cursor: "pointer",
-                      fontFamily: "Plus Jakarta Sans,sans-serif",
-                      fontSize: 12,
-                      fontWeight: 600,
-                      transition: "all .2s",
-                      textTransform: "capitalize",
-                      borderColor:
-                        ftype === f ? "var(--accent)" : "var(--border)",
-                      background:
-                        ftype === f ? "var(--accentBg)" : "transparent",
-                      color: ftype === f ? "var(--accent)" : "var(--textSub)",
-                    }}
-                  >
-                    {f}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <Card className="fu1">
-              <div
-                style={{
-                  fontSize: 10,
-                  fontWeight: 700,
-                  color: "var(--textMuted)",
-                  letterSpacing: "0.07em",
-                  textTransform: "uppercase",
-                  marginBottom: 10,
-                  fontFamily: "Plus Jakarta Sans,sans-serif",
-                }}
-              >
-                {filtered.length} transactions
-              </div>
-              {filtered.length === 0 ? (
-                <div
-                  style={{
-                    textAlign: "center",
-                    padding: 36,
-                    color: "var(--textMuted)",
-                    fontFamily: "Plus Jakarta Sans,sans-serif",
-                  }}
-                >
-                  No transactions found
-                </div>
-              ) : (
-                filtered.map((t) => (
-                  <TxnRow
-                    key={t.id}
-                    t={t}
-                    cats={cats}
-                    currency={currency}
-                    onDelete={delTxn}
-                  />
-                ))
-              )}
-            </Card>
-          </div>
-        )}
-
-        {/* ═══ RECURRING ═══ */}
-        {view === "recurring" && (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))",
-              gap: 12,
-            }}
-            className="fu"
-          >
-            {recurring.map((r) => {
-              const cat = cats.find((c) => c.id === r.catId) || {
-                emoji: "📦",
-                name: "Other",
-              };
-              return (
-                <Card key={r.id}>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "flex-start",
-                      marginBottom: 10,
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: 9,
-                        background: "var(--expenseBg)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: 18,
-                      }}
-                    >
-                      {cat.emoji}
-                    </div>
-                    <button
-                      onClick={() =>
-                        setRecurring((p) => p.filter((x) => x.id !== r.id))
-                      }
-                      className="ib"
-                      style={{ color: "var(--textMuted)", fontSize: 12 }}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 14,
-                      fontWeight: 700,
-                      color: "var(--text)",
-                      fontFamily: "Plus Jakarta Sans,sans-serif",
-                    }}
-                  >
-                    {r.note || cat.name}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 20,
-                      fontWeight: 700,
-                      color: "var(--expense)",
-                      fontFamily: "JetBrains Mono,monospace",
-                      margin: "6px 0",
-                    }}
-                  >
-                    {fmtC(r.amount, r.currency)}
-                  </div>
-                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                    <Tag color="var(--accent)">{r.frequency}</Tag>
-                    <Tag color="var(--textSub)">Next: {r.nextDate}</Tag>
-                  </div>
-                </Card>
-              );
-            })}
-            <button
-              onClick={() => setModal("recur")}
-              style={{
-                border: "2px dashed var(--border)",
-                borderRadius: 16,
-                padding: 20,
-                cursor: "pointer",
-                background: "transparent",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 8,
-                transition: "all .2s",
-                minHeight: 120,
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = "var(--accent)";
-                e.currentTarget.style.background = "var(--accentBg)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = "var(--border)";
-                e.currentTarget.style.background = "transparent";
-              }}
-            >
-              <span style={{ fontSize: 24 }}>🔁</span>
-              <span
-                style={{
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: "var(--textSub)",
-                  fontFamily: "Plus Jakarta Sans,sans-serif",
-                }}
-              >
-                Add Recurring
-              </span>
-            </button>
-          </div>
-        )}
-
-        {/* ═══ BILLS ═══ */}
-        {view === "bills" && (
-          <div>
-            {overdueBills.length > 0 && (
-              <div
-                style={{
-                  background: "var(--expenseBg)",
-                  border: "1px solid var(--expense)",
-                  borderRadius: 12,
-                  padding: "11px 15px",
-                  marginBottom: 12,
-                  display: "flex",
-                  gap: 10,
-                  alignItems: "center",
-                }}
-                className="fu"
-              >
-                <span style={{ fontSize: 18 }}>🚨</span>
-                <div>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 700,
-                      color: "var(--expense)",
-                      fontFamily: "Plus Jakarta Sans,sans-serif",
-                    }}
-                  >
-                    {overdueBills.length} Overdue Bill
-                    {overdueBills.length > 1 ? "s" : ""}
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: "var(--textSub)",
-                      fontFamily: "Plus Jakarta Sans,sans-serif",
-                    }}
-                  >
-                    {overdueBills.map((b) => b.note).join(", ")}
-                  </div>
-                </div>
-              </div>
+              </>
             )}
-            <div
-              style={{ display: "flex", flexDirection: "column", gap: 10 }}
-              className="fu1"
-            >
-              {bills.map((b) => {
-                const cat = cats.find((c) => c.id === b.catId) || {
-                  emoji: "📦",
-                  name: "Other",
-                };
-                const d = daysUntil(b.dueDate);
-                const urgent = !b.paid && d <= 3;
-                return (
-                  <div
-                    key={b.id}
-                    style={{
-                      background: "var(--panel)",
-                      border:
-                        "1px solid " +
-                        (urgent ? "var(--expense)" : "var(--border)"),
-                      borderRadius: 14,
-                      padding: "14px 16px",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 12,
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: 38,
-                        height: 38,
-                        borderRadius: 9,
-                        background: b.paid
-                          ? "var(--incomeBg)"
-                          : "var(--expenseBg)",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: 18,
-                      }}
-                    >
-                      {b.paid ? "✅" : cat.emoji}
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <div
-                        style={{
-                          fontSize: 14,
-                          fontWeight: 600,
-                          color: "var(--text)",
-                          fontFamily: "Plus Jakarta Sans,sans-serif",
-                        }}
-                      >
-                        {b.note}
-                      </div>
-                      <div
-                        style={{
-                          display: "flex",
-                          gap: 6,
-                          marginTop: 3,
-                          flexWrap: "wrap",
-                        }}
-                      >
-                        <Tag
-                          color={
-                            b.paid
-                              ? "var(--income)"
-                              : urgent
-                                ? "var(--expense)"
-                                : "var(--textSub)"
-                          }
-                        >
-                          {b.paid
-                            ? "Paid"
-                            : d < 0
-                              ? Math.abs(d) + "d overdue"
-                              : d === 0
-                                ? "Due today"
-                                : "Due in " + d + "d"}
-                        </Tag>
-                        <span
-                          style={{
-                            fontSize: 10,
-                            color: "var(--textMuted)",
-                            fontFamily: "JetBrains Mono,monospace",
-                          }}
-                        >
-                          {b.dueDate}
-                        </span>
-                      </div>
-                    </div>
-                    <div style={{ textAlign: "right" }}>
-                      <div
-                        style={{
-                          fontSize: 15,
-                          fontWeight: 700,
-                          color: "var(--expense)",
-                          fontFamily: "JetBrains Mono,monospace",
-                          marginBottom: 6,
-                        }}
-                      >
-                        {fmtC(b.amount, b.currency)}
-                      </div>
-                      <Btn
-                        size="sm"
-                        variant={b.paid ? "outline" : "success"}
-                        onClick={() =>
-                          setBills((p) =>
-                            p.map((x) =>
-                              x.id === b.id ? { ...x, paid: !x.paid } : x,
-                            ),
-                          )
-                        }
-                      >
-                        {b.paid ? "Unpay" : "Mark Paid"}
-                      </Btn>
-                    </div>
-                    <button
-                      onClick={() =>
-                        setBills((p) => p.filter((x) => x.id !== b.id))
-                      }
-                      className="ib"
-                      style={{ color: "var(--textMuted)", fontSize: 12 }}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                );
-              })}
-              <button
-                onClick={() => setModal("bill")}
-                style={{
-                  border: "2px dashed var(--border)",
-                  borderRadius: 14,
-                  padding: 18,
-                  cursor: "pointer",
-                  background: "transparent",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  gap: 8,
-                  transition: "all .2s",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = "var(--accent)";
-                  e.currentTarget.style.background = "var(--accentBg)";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = "var(--border)";
-                  e.currentTarget.style.background = "transparent";
-                }}
-              >
-                <span style={{ fontSize: 20 }}>📅</span>
-                <span
+
+            {/* ═══ TRANSACTIONS ═══ */}
+            {view === "txns" && (
+              <>
+                <div
+                  className="fu"
                   style={{
-                    fontSize: 13,
-                    fontWeight: 600,
-                    color: "var(--textSub)",
-                    fontFamily: "Plus Jakarta Sans,sans-serif",
+                    display: "flex",
+                    gap: 10,
+                    marginBottom: 14,
+                    flexWrap: "wrap",
                   }}
                 >
-                  Add Bill Reminder
-                </span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ═══ GOALS ═══ */}
-        {view === "goals" && (
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))",
-              gap: 12,
-            }}
-            className="fu"
-          >
-            {goals.map((g) => {
-              const pct = Math.min(100, (g.saved / g.target) * 100);
-              return (
-                <Card key={g.id}>
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "flex-start",
-                    }}
-                  >
-                    <span style={{ fontSize: 28 }}>{g.emoji}</span>
-                    <button
-                      onClick={() =>
-                        setGoals((p) => p.filter((x) => x.id !== g.id))
-                      }
-                      className="ib"
-                      style={{ color: "var(--textMuted)", fontSize: 12 }}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 15,
-                      fontWeight: 700,
-                      color: "var(--text)",
-                      marginTop: 8,
-                      fontFamily: "Plus Jakarta Sans,sans-serif",
-                    }}
-                  >
-                    {g.name}
-                  </div>
-                  {g.deadline && (
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: "var(--textMuted)",
-                        marginTop: 2,
-                        fontFamily: "Plus Jakarta Sans,sans-serif",
-                      }}
-                    >
-                      🗓{" "}
-                      {new Date(g.deadline).toLocaleDateString("en-US", {
-                        month: "short",
-                        year: "numeric",
-                      })}
-                    </div>
-                  )}
-                  <div
-                    style={{
-                      height: 7,
-                      background: "var(--card)",
-                      borderRadius: 4,
-                      overflow: "hidden",
-                      margin: "12px 0 7px",
-                    }}
-                  >
-                    <div
-                      style={{
-                        height: "100%",
-                        width: pct + "%",
-                        background:
-                          "linear-gradient(90deg,var(--gFrom),var(--gTo))",
-                        borderRadius: 4,
-                        transition: "width .8s ease",
-                      }}
-                    />
-                  </div>
-                  <div
-                    style={{ display: "flex", justifyContent: "space-between" }}
-                  >
-                    <span
-                      style={{
-                        fontSize: 12,
-                        color: "var(--textSub)",
-                        fontFamily: "Plus Jakarta Sans,sans-serif",
-                      }}
-                    >
-                      {fmtC(g.saved, currency)} saved
-                    </span>
-                    <span
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 700,
-                        color: "var(--accent)",
-                        fontFamily: "JetBrains Mono,monospace",
-                      }}
-                    >
-                      {pct.toFixed(0)}%
-                    </span>
-                  </div>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: "var(--textMuted)",
-                      marginTop: 2,
-                      fontFamily: "Plus Jakarta Sans,sans-serif",
-                    }}
-                  >
-                    {fmtC(g.target - g.saved, currency)} left of{" "}
-                    {fmtC(g.target, currency)}
-                  </div>
-                  <div style={{ marginTop: 10 }}>
+                  <div style={{ flex: 1, minWidth: 160 }}>
                     <Field
-                      value={String(g.saved)}
-                      onChange={(e) =>
-                        setGoals((p) =>
-                          p.map((x) =>
-                            x.id === g.id
-                              ? { ...x, saved: +e.target.value || 0 }
-                              : x,
-                          ),
-                        )
-                      }
-                      placeholder="Update saved"
-                      prefix="$"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      placeholder="🔍 Search..."
                     />
                   </div>
-                </Card>
-              );
-            })}
-            <button
-              onClick={() => setModal("goal")}
-              style={{
-                border: "2px dashed var(--border)",
-                borderRadius: 16,
-                padding: 20,
-                cursor: "pointer",
-                background: "transparent",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: 8,
-                transition: "all .2s",
-                minHeight: 140,
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.borderColor = "var(--accent)";
-                e.currentTarget.style.background = "var(--accentBg)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = "var(--border)";
-                e.currentTarget.style.background = "transparent";
-              }}
-            >
-              <span style={{ fontSize: 24 }}>🎯</span>
-              <span
-                style={{
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: "var(--textSub)",
-                  fontFamily: "Plus Jakarta Sans,sans-serif",
-                }}
-              >
-                New Goal
-              </span>
-            </button>
-          </div>
-        )}
-
-        {/* ═══ ANALYTICS ═══ */}
-        {view === "analytics" && (
-          <div>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))",
-                gap: 14,
-                marginBottom: 14,
-              }}
-            >
-              <Card className="fu">
-                <div
-                  style={{
-                    fontSize: 14,
-                    fontWeight: 700,
-                    color: "var(--text)",
-                    marginBottom: 14,
-                  }}
-                >
-                  Monthly Overview
-                </div>
-                <ResponsiveContainer width="100%" height={210}>
-                  <BarChart data={MONTHLY} barGap={3}>
-                    <CartesianGrid
-                      strokeDasharray="3 3"
-                      stroke="var(--border)"
-                    />
-                    <XAxis
-                      dataKey="m"
-                      tick={{
-                        fill: "var(--textMuted)",
-                        fontSize: 10,
-                        fontFamily: "JetBrains Mono",
-                      }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      tick={{
-                        fill: "var(--textMuted)",
-                        fontSize: 10,
-                        fontFamily: "JetBrains Mono",
-                      }}
-                      axisLine={false}
-                      tickLine={false}
-                      tickFormatter={(v) => fmtK(v, cur.sym)}
-                    />
-                    <Tooltip
-                      contentStyle={ttStyle}
-                      formatter={(v) => [fmtC(v, currency)]}
-                    />
-                    <Bar
-                      dataKey="inc"
-                      fill="#34d399"
-                      radius={[4, 4, 0, 0]}
-                      name="Income"
-                    />
-                    <Bar
-                      dataKey="exp"
-                      fill="#f87171"
-                      radius={[4, 4, 0, 0]}
-                      name="Expenses"
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              </Card>
-              <Card className="fu1">
-                <div
-                  style={{
-                    fontSize: 14,
-                    fontWeight: 700,
-                    color: "var(--text)",
-                    marginBottom: 14,
-                  }}
-                >
-                  Spending Breakdown
-                </div>
-                {catExp.slice(0, 7).map((e) => {
-                  const c = cats.find((x) => x.id === e.catId);
-                  const pct = totExp
-                    ? ((e.value / totExp) * 100).toFixed(1)
-                    : 0;
-                  return (
-                    <div key={e.catId} style={{ marginBottom: 10 }}>
-                      <div
+                  <div style={{ display: "flex", gap: 5, flexWrap: "wrap" }}>
+                    {["all", "income", "expense"].map((f) => (
+                      <button
+                        key={f}
+                        onClick={() => setFtype(f)}
                         style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          marginBottom: 4,
+                          padding: "9px 13px",
+                          borderRadius: 9,
+                          border: "1px solid",
+                          cursor: "pointer",
+                          fontFamily: "Plus Jakarta Sans,sans-serif",
+                          fontSize: 12,
+                          fontWeight: 600,
+                          transition: "all .2s",
+                          textTransform: "capitalize",
+                          borderColor:
+                            ftype === f ? "var(--accent)" : "var(--border)",
+                          background:
+                            ftype === f ? "var(--accentBg)" : "transparent",
+                          color:
+                            ftype === f ? "var(--accent)" : "var(--textSub)",
                         }}
                       >
-                        <span
-                          style={{
-                            fontSize: 12,
-                            color: "var(--text)",
-                            fontFamily: "Plus Jakarta Sans,sans-serif",
-                          }}
-                        >
-                          {c ? c.emoji : "📦"} {c ? c.name : "Other"}
-                        </span>
-                        <span
-                          style={{
-                            fontSize: 11,
-                            color: "var(--textSub)",
-                            fontFamily: "JetBrains Mono,monospace",
-                          }}
-                        >
-                          {fmtC(e.value, currency)} · {pct}%
-                        </span>
-                      </div>
-                      <div
-                        style={{
-                          height: 5,
-                          background: "var(--card)",
-                          borderRadius: 3,
-                          overflow: "hidden",
-                        }}
-                      >
-                        <div
-                          style={{
-                            height: "100%",
-                            width: pct + "%",
-                            background: c ? c.color : "#6b7280",
-                            borderRadius: 3,
-                          }}
-                        />
-                      </div>
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <Card className="fu1">
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 700,
+                      color: "var(--textMuted)",
+                      letterSpacing: "0.07em",
+                      textTransform: "uppercase",
+                      marginBottom: 10,
+                      fontFamily: "Plus Jakarta Sans,sans-serif",
+                    }}
+                  >
+                    {filtered.length} transactions
+                  </div>
+                  {filtered.length === 0 ? (
+                    <div
+                      style={{
+                        textAlign: "center",
+                        padding: 36,
+                        color: "var(--textMuted)",
+                        fontFamily: "Plus Jakarta Sans,sans-serif",
+                      }}
+                    >
+                      No transactions found
                     </div>
-                  );
-                })}
-              </Card>
-            </div>
+                  ) : (
+                    filtered.map((t) => (
+                      <TxnRow
+                        key={t.id}
+                        t={t}
+                        cats={cats}
+                        currency={currency}
+                        onDelete={delTxn}
+                      />
+                    ))
+                  )}
+                </Card>
+              </>
+            )}
 
-            <Card style={{ marginBottom: 14 }}>
-              <div
-                style={{
-                  fontSize: 14,
-                  fontWeight: 700,
-                  color: "var(--text)",
-                  marginBottom: 14,
-                }}
-              >
-                Budget Progress
-              </div>
-              {budgets.length === 0 ? (
-                <div
-                  style={{
-                    color: "var(--textMuted)",
-                    fontSize: 13,
-                    fontFamily: "Plus Jakarta Sans,sans-serif",
-                  }}
-                >
-                  No budgets set — click "Budgets" in the sidebar.
-                </div>
-              ) : (
+            {/* ═══ RECURRING ═══ */}
+            {view === "recurring" && (
+              <>
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill,minmax(180px,1fr))",
-                    gap: 11,
+                    gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))",
+                    gap: 12,
                   }}
+                  className="fu"
                 >
-                  {budgets.map((b) => {
-                    const cat = cats.find((c) => c.id === b.catId);
-                    const spent = txns
-                      .filter(
-                        (t) => t.type === "expense" && t.catId === b.catId,
-                      )
-                      .reduce((s, t) => s + t.amount, 0);
-                    const pct = b.limit
-                      ? Math.min(100, (spent / b.limit) * 100)
-                      : 0;
-                    const over = pct > 100;
-                    const warn = pct > 80;
+                  {recurring.map((r) => {
+                    const cat = cats.find(
+                      (c) => c.id === (r.cat_id || r.catId),
+                    ) || { emoji: "📦", name: "Other" };
                     return (
-                      <div
-                        key={b.id}
-                        style={{
-                          background: "var(--card)",
-                          borderRadius: 11,
-                          padding: 13,
-                          border:
-                            "1px solid " +
-                            (over
-                              ? "var(--expense)"
-                              : warn
-                                ? "var(--amber)"
-                                : "var(--border)"),
-                        }}
-                      >
+                      <Card key={r.id}>
                         <div
                           style={{
                             display: "flex",
                             justifyContent: "space-between",
-                            alignItems: "center",
-                            marginBottom: 6,
+                            alignItems: "flex-start",
+                            marginBottom: 10,
                           }}
                         >
-                          <span style={{ fontSize: 16 }}>
-                            {cat ? cat.emoji : "📦"}
-                          </span>
-                          <Tag
-                            color={
-                              over
-                                ? "var(--expense)"
-                                : warn
-                                  ? "var(--amber)"
-                                  : "var(--textSub)"
-                            }
+                          <div
+                            style={{
+                              width: 36,
+                              height: 36,
+                              borderRadius: 9,
+                              background: "var(--expenseBg)",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: 18,
+                            }}
                           >
-                            {pct.toFixed(0)}%
-                          </Tag>
+                            {cat.emoji}
+                          </div>
+                          <button
+                            onClick={() => deleteRecurring(r.id)}
+                            className="ib"
+                            style={{ color: "var(--textMuted)", fontSize: 12 }}
+                          >
+                            ✕
+                          </button>
                         </div>
                         <div
                           style={{
-                            fontSize: 12,
-                            fontWeight: 600,
+                            fontSize: 14,
+                            fontWeight: 700,
                             color: "var(--text)",
                             fontFamily: "Plus Jakarta Sans,sans-serif",
-                            marginBottom: 6,
                           }}
                         >
-                          {cat ? cat.name : "Other"}
+                          {r.note || cat.name}
                         </div>
                         <div
                           style={{
-                            height: 5,
-                            background: "var(--border)",
-                            borderRadius: 3,
+                            fontSize: 20,
+                            fontWeight: 700,
+                            color: "var(--expense)",
+                            fontFamily: "JetBrains Mono,monospace",
+                            margin: "6px 0",
+                          }}
+                        >
+                          {fmtC(r.amount, r.currency)}
+                        </div>
+                        <div
+                          style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
+                        >
+                          <Tag color="var(--accent)">{r.frequency}</Tag>
+                          <Tag color="var(--textSub)">
+                            Next: {r.next_date || r.nextDate}
+                          </Tag>
+                        </div>
+                      </Card>
+                    );
+                  })}
+                  <button
+                    onClick={() => setModal("recur")}
+                    style={{
+                      border: "2px dashed var(--border)",
+                      borderRadius: 16,
+                      padding: 20,
+                      cursor: "pointer",
+                      background: "transparent",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      transition: "all .2s",
+                      minHeight: 120,
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = "var(--accent)";
+                      e.currentTarget.style.background = "var(--accentBg)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = "var(--border)";
+                      e.currentTarget.style.background = "transparent";
+                    }}
+                  >
+                    <span style={{ fontSize: 24 }}>🔁</span>
+                    <span
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: "var(--textSub)",
+                        fontFamily: "Plus Jakarta Sans,sans-serif",
+                      }}
+                    >
+                      Add Recurring
+                    </span>
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* ═══ BILLS ═══ */}
+            {view === "bills" && (
+              <>
+                {overdueBills.length > 0 && (
+                  <div
+                    style={{
+                      background: "var(--expenseBg)",
+                      border: "1px solid var(--expense)",
+                      borderRadius: 12,
+                      padding: "11px 15px",
+                      marginBottom: 12,
+                      display: "flex",
+                      gap: 10,
+                      alignItems: "center",
+                    }}
+                    className="fu"
+                  >
+                    <span style={{ fontSize: 18 }}>🚨</span>
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          fontWeight: 700,
+                          color: "var(--expense)",
+                          fontFamily: "Plus Jakarta Sans,sans-serif",
+                        }}
+                      >
+                        {overdueBills.length} Overdue Bill
+                        {overdueBills.length > 1 ? "s" : ""}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: "var(--textSub)",
+                          fontFamily: "Plus Jakarta Sans,sans-serif",
+                        }}
+                      >
+                        {overdueBills.map((b) => b.note).join(", ")}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                <div
+                  style={{ display: "flex", flexDirection: "column", gap: 10 }}
+                  className="fu1"
+                >
+                  {bills.map((b) => {
+                    const cat = cats.find(
+                      (c) => c.id === (b.cat_id || b.catId),
+                    ) || { emoji: "📦" };
+                    const d = daysUntil(b.due_date || b.dueDate);
+                    const urgent = !b.paid && d <= 3;
+                    return (
+                      <div
+                        key={b.id}
+                        style={{
+                          background: "var(--panel)",
+                          border:
+                            "1px solid " +
+                            (urgent ? "var(--expense)" : "var(--border)"),
+                          borderRadius: 14,
+                          padding: "14px 16px",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 12,
+                        }}
+                      >
+                        <div
+                          style={{
+                            width: 38,
+                            height: 38,
+                            borderRadius: 9,
+                            background: b.paid
+                              ? "var(--incomeBg)"
+                              : "var(--expenseBg)",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            fontSize: 18,
+                          }}
+                        >
+                          {b.paid ? "✅" : cat.emoji}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div
+                            style={{
+                              fontSize: 14,
+                              fontWeight: 600,
+                              color: "var(--text)",
+                              fontFamily: "Plus Jakarta Sans,sans-serif",
+                            }}
+                          >
+                            {b.note}
+                          </div>
+                          <div
+                            style={{
+                              display: "flex",
+                              gap: 6,
+                              marginTop: 3,
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <Tag
+                              color={
+                                b.paid
+                                  ? "var(--income)"
+                                  : urgent
+                                    ? "var(--expense)"
+                                    : "var(--textSub)"
+                              }
+                            >
+                              {b.paid
+                                ? "Paid"
+                                : d < 0
+                                  ? Math.abs(d) + "d overdue"
+                                  : d === 0
+                                    ? "Due today"
+                                    : "Due in " + d + "d"}
+                            </Tag>
+                            <span
+                              style={{
+                                fontSize: 10,
+                                color: "var(--textMuted)",
+                                fontFamily: "JetBrains Mono,monospace",
+                              }}
+                            >
+                              {b.due_date || b.dueDate}
+                            </span>
+                          </div>
+                        </div>
+                        <div style={{ textAlign: "right" }}>
+                          <div
+                            style={{
+                              fontSize: 15,
+                              fontWeight: 700,
+                              color: "var(--expense)",
+                              fontFamily: "JetBrains Mono,monospace",
+                              marginBottom: 6,
+                            }}
+                          >
+                            {fmtC(b.amount, b.currency)}
+                          </div>
+                          <Btn
+                            size="sm"
+                            variant={b.paid ? "outline" : "success"}
+                            onClick={() => toggleBillPaid(b.id, b.paid)}
+                          >
+                            {b.paid ? "Unpay" : "Mark Paid"}
+                          </Btn>
+                        </div>
+                        <button
+                          onClick={() => deleteBill(b.id)}
+                          className="ib"
+                          style={{ color: "var(--textMuted)", fontSize: 12 }}
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <button
+                    onClick={() => setModal("bill")}
+                    style={{
+                      border: "2px dashed var(--border)",
+                      borderRadius: 14,
+                      padding: 18,
+                      cursor: "pointer",
+                      background: "transparent",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      transition: "all .2s",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = "var(--accent)";
+                      e.currentTarget.style.background = "var(--accentBg)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = "var(--border)";
+                      e.currentTarget.style.background = "transparent";
+                    }}
+                  >
+                    <span style={{ fontSize: 20 }}>📅</span>
+                    <span
+                      style={{
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: "var(--textSub)",
+                        fontFamily: "Plus Jakarta Sans,sans-serif",
+                      }}
+                    >
+                      Add Bill Reminder
+                    </span>
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* ═══ GOALS ═══ */}
+            {view === "goals" && (
+              <>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill,minmax(250px,1fr))",
+                    gap: 12,
+                  }}
+                  className="fu"
+                >
+                  {goals.map((g) => {
+                    const pct = Math.min(100, (g.saved / g.target) * 100);
+                    return (
+                      <Card key={g.id}>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "flex-start",
+                          }}
+                        >
+                          <span style={{ fontSize: 28 }}>{g.emoji}</span>
+                          <button
+                            onClick={() => deleteGoal(g.id)}
+                            className="ib"
+                            style={{ color: "var(--textMuted)", fontSize: 12 }}
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 15,
+                            fontWeight: 700,
+                            color: "var(--text)",
+                            marginTop: 8,
+                            fontFamily: "Plus Jakarta Sans,sans-serif",
+                          }}
+                        >
+                          {g.name}
+                        </div>
+                        {g.deadline && (
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: "var(--textMuted)",
+                              marginTop: 2,
+                              fontFamily: "Plus Jakarta Sans,sans-serif",
+                            }}
+                          >
+                            🗓{" "}
+                            {new Date(g.deadline).toLocaleDateString("en-US", {
+                              month: "short",
+                              year: "numeric",
+                            })}
+                          </div>
+                        )}
+                        <div
+                          style={{
+                            height: 7,
+                            background: "var(--card)",
+                            borderRadius: 4,
                             overflow: "hidden",
-                            marginBottom: 5,
+                            margin: "12px 0 7px",
                           }}
                         >
                           <div
                             style={{
                               height: "100%",
                               width: pct + "%",
-                              background: over
-                                ? "var(--expense)"
-                                : warn
-                                  ? "var(--amber)"
-                                  : cat
-                                    ? cat.color
-                                    : "var(--accent)",
-                              borderRadius: 3,
-                              transition: "width .6s",
+                              background:
+                                "linear-gradient(90deg,var(--gFrom),var(--gTo))",
+                              borderRadius: 4,
+                              transition: "width .8s ease",
                             }}
                           />
                         </div>
                         <div
                           style={{
-                            fontSize: 10,
-                            color: "var(--textMuted)",
-                            fontFamily: "JetBrains Mono,monospace",
+                            display: "flex",
+                            justifyContent: "space-between",
                           }}
                         >
-                          {fmtC(spent, currency)} / {fmtC(b.limit, currency)}
+                          <span
+                            style={{
+                              fontSize: 12,
+                              color: "var(--textSub)",
+                              fontFamily: "Plus Jakarta Sans,sans-serif",
+                            }}
+                          >
+                            {fmtC(g.saved, currency)} saved
+                          </span>
+                          <span
+                            style={{
+                              fontSize: 12,
+                              fontWeight: 700,
+                              color: "var(--accent)",
+                              fontFamily: "JetBrains Mono,monospace",
+                            }}
+                          >
+                            {pct.toFixed(0)}%
+                          </span>
                         </div>
-                      </div>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "var(--textMuted)",
+                            marginTop: 2,
+                            fontFamily: "Plus Jakarta Sans,sans-serif",
+                          }}
+                        >
+                          {fmtC(g.target - g.saved, currency)} left of{" "}
+                          {fmtC(g.target, currency)}
+                        </div>
+                        <div style={{ marginTop: 10 }}>
+                          <Field
+                            value={String(g.saved)}
+                            onChange={(e) =>
+                              updateGoalSaved(g.id, e.target.value)
+                            }
+                            placeholder="Update saved"
+                            prefix="$"
+                          />
+                        </div>
+                      </Card>
                     );
                   })}
-                </div>
-              )}
-            </Card>
-
-            <Card>
-              <div
-                style={{
-                  fontSize: 14,
-                  fontWeight: 700,
-                  color: "var(--text)",
-                  marginBottom: 14,
-                }}
-              >
-                Income Sources
-              </div>
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))",
-                  gap: 10,
-                }}
-              >
-                {Object.entries(
-                  txns
-                    .filter((t) => t.type === "income")
-                    .reduce((m, t) => {
-                      m[t.catId] = (m[t.catId] || 0) + t.amount;
-                      return m;
-                    }, {}),
-                ).map(([catId, amt]) => {
-                  const c = cats.find((x) => x.id === catId);
-                  return (
-                    <div
-                      key={catId}
+                  <button
+                    onClick={() => setModal("goal")}
+                    style={{
+                      border: "2px dashed var(--border)",
+                      borderRadius: 16,
+                      padding: 20,
+                      cursor: "pointer",
+                      background: "transparent",
+                      display: "flex",
+                      flexDirection: "column",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      transition: "all .2s",
+                      minHeight: 140,
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = "var(--accent)";
+                      e.currentTarget.style.background = "var(--accentBg)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = "var(--border)";
+                      e.currentTarget.style.background = "transparent";
+                    }}
+                  >
+                    <span style={{ fontSize: 24 }}>🎯</span>
+                    <span
                       style={{
-                        background: "var(--card)",
-                        borderRadius: 11,
-                        padding: "12px 14px",
-                        borderLeft:
-                          "3px solid " + (c ? c.color : "var(--accent)"),
+                        fontSize: 13,
+                        fontWeight: 600,
+                        color: "var(--textSub)",
+                        fontFamily: "Plus Jakarta Sans,sans-serif",
                       }}
                     >
-                      <div style={{ fontSize: 18, marginBottom: 5 }}>
-                        {c ? c.emoji : "💰"}
-                      </div>
+                      New Goal
+                    </span>
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* ═══ ANALYTICS ═══ */}
+            {view === "analytics" && (
+              <>
+                <div
+                  className="g2"
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 14,
+                    marginBottom: 14,
+                  }}
+                >
+                  <Card className="fu">
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: "var(--text)",
+                        marginBottom: 14,
+                      }}
+                    >
+                      Monthly Overview
+                    </div>
+                    <ResponsiveContainer width="100%" height={210}>
+                      <BarChart data={MONTHLY_DATA} barGap={3}>
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          stroke="var(--border)"
+                        />
+                        <XAxis
+                          dataKey="m"
+                          tick={{
+                            fill: "var(--textMuted)",
+                            fontSize: 10,
+                            fontFamily: "JetBrains Mono",
+                          }}
+                          axisLine={false}
+                          tickLine={false}
+                        />
+                        <YAxis
+                          tick={{
+                            fill: "var(--textMuted)",
+                            fontSize: 10,
+                            fontFamily: "JetBrains Mono",
+                          }}
+                          axisLine={false}
+                          tickLine={false}
+                          tickFormatter={(v) => fmtK(v, cur.sym)}
+                        />
+                        <Tooltip
+                          contentStyle={ttStyle}
+                          formatter={(v) => [fmtC(v, currency)]}
+                        />
+                        <Bar
+                          dataKey="inc"
+                          fill="#34d399"
+                          radius={[4, 4, 0, 0]}
+                          name="Income"
+                        />
+                        <Bar
+                          dataKey="exp"
+                          fill="#f87171"
+                          radius={[4, 4, 0, 0]}
+                          name="Expenses"
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </Card>
+                  <Card className="fu1">
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: "var(--text)",
+                        marginBottom: 14,
+                      }}
+                    >
+                      Spending Breakdown
+                    </div>
+                    {catExp.slice(0, 7).map((e) => {
+                      const c = cats.find((x) => x.id === e.catId);
+                      const pct = totExp
+                        ? ((e.value / totExp) * 100).toFixed(1)
+                        : 0;
+                      return (
+                        <div key={e.catId} style={{ marginBottom: 10 }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              marginBottom: 4,
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontSize: 12,
+                                color: "var(--text)",
+                                fontFamily: "Plus Jakarta Sans,sans-serif",
+                              }}
+                            >
+                              {c ? c.emoji : "📦"} {c ? c.name : "Other"}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: 11,
+                                color: "var(--textSub)",
+                                fontFamily: "JetBrains Mono,monospace",
+                              }}
+                            >
+                              {fmtC(e.value, currency)} · {pct}%
+                            </span>
+                          </div>
+                          <div
+                            style={{
+                              height: 5,
+                              background: "var(--card)",
+                              borderRadius: 3,
+                              overflow: "hidden",
+                            }}
+                          >
+                            <div
+                              style={{
+                                height: "100%",
+                                width: pct + "%",
+                                background: c ? c.color : "#6b7280",
+                                borderRadius: 3,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </Card>
+                </div>
+
+                <Card className="fu2" style={{ marginBottom: 14 }}>
+                  <div
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 700,
+                      color: "var(--text)",
+                      marginBottom: 14,
+                    }}
+                  >
+                    Budget Progress
+                  </div>
+                  {budgets.length === 0 ? (
+                    <div
+                      style={{
+                        color: "var(--textMuted)",
+                        fontSize: 13,
+                        fontFamily: "Plus Jakarta Sans,sans-serif",
+                      }}
+                    >
+                      No budgets set — click "Budgets" in the sidebar.
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns:
+                          "repeat(auto-fill,minmax(190px,1fr))",
+                        gap: 11,
+                      }}
+                    >
+                      {budgets.map((b) => {
+                        const cat = cats.find((c) => c.id === b.cat_id);
+                        const spent = txns
+                          .filter(
+                            (t) =>
+                              t.type === "expense" &&
+                              (t.cat_id || t.catId) === b.cat_id,
+                          )
+                          .reduce((s, t) => s + t.amount, 0);
+                        const limit = b.limit_amount || b.limit || 0;
+                        const pct = limit
+                          ? Math.min(100, (spent / limit) * 100)
+                          : 0;
+                        const over = pct > 100;
+                        const warn = pct > 80;
+                        return (
+                          <div
+                            key={b.id}
+                            style={{
+                              background: "var(--card)",
+                              borderRadius: 11,
+                              padding: 13,
+                              border:
+                                "1px solid " +
+                                (over
+                                  ? "var(--expense)"
+                                  : warn
+                                    ? "var(--amber)"
+                                    : "var(--border)"),
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                marginBottom: 6,
+                              }}
+                            >
+                              <span style={{ fontSize: 16 }}>
+                                {cat ? cat.emoji : "📦"}
+                              </span>
+                              <Tag
+                                color={
+                                  over
+                                    ? "var(--expense)"
+                                    : warn
+                                      ? "var(--amber)"
+                                      : "var(--textSub)"
+                                }
+                              >
+                                {pct.toFixed(0)}%
+                              </Tag>
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 12,
+                                fontWeight: 600,
+                                color: "var(--text)",
+                                fontFamily: "Plus Jakarta Sans,sans-serif",
+                                marginBottom: 6,
+                              }}
+                            >
+                              {cat ? cat.name : "Other"}
+                            </div>
+                            <div
+                              style={{
+                                height: 5,
+                                background: "var(--border)",
+                                borderRadius: 3,
+                                overflow: "hidden",
+                                marginBottom: 5,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  height: "100%",
+                                  width: pct + "%",
+                                  background: over
+                                    ? "var(--expense)"
+                                    : warn
+                                      ? "var(--amber)"
+                                      : cat
+                                        ? cat.color
+                                        : "var(--accent)",
+                                  borderRadius: 3,
+                                  transition: "width .6s",
+                                }}
+                              />
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 10,
+                                color: "var(--textMuted)",
+                                fontFamily: "JetBrains Mono,monospace",
+                              }}
+                            >
+                              {fmtC(spent, currency)} / {fmtC(limit, currency)}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </Card>
+
+                <Card className="fu3">
+                  <div
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 700,
+                      color: "var(--text)",
+                      marginBottom: 14,
+                    }}
+                  >
+                    Income Sources
+                  </div>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "repeat(auto-fill,minmax(140px,1fr))",
+                      gap: 10,
+                    }}
+                  >
+                    {Object.entries(
+                      txns
+                        .filter((t) => t.type === "income")
+                        .reduce((m, t) => {
+                          const k = t.cat_id || t.catId;
+                          m[k] = (m[k] || 0) + t.amount;
+                          return m;
+                        }, {}),
+                    ).map(([catId, amt]) => {
+                      const c = cats.find((x) => x.id === catId);
+                      return (
+                        <div
+                          key={catId}
+                          style={{
+                            background: "var(--card)",
+                            borderRadius: 11,
+                            padding: "12px 14px",
+                            borderLeft:
+                              "3px solid " + (c ? c.color : "var(--accent)"),
+                          }}
+                        >
+                          <div style={{ fontSize: 18, marginBottom: 5 }}>
+                            {c ? c.emoji : "💰"}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: "var(--textMuted)",
+                              fontFamily: "Plus Jakarta Sans,sans-serif",
+                            }}
+                          >
+                            {c ? c.name : "Income"}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 16,
+                              fontWeight: 700,
+                              fontFamily: "JetBrains Mono,monospace",
+                              color: "var(--text)",
+                              marginTop: 3,
+                            }}
+                          >
+                            {fmtC(amt, currency)}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {txns.filter((t) => t.type === "income").length === 0 && (
                       <div
                         style={{
-                          fontSize: 11,
                           color: "var(--textMuted)",
+                          fontSize: 13,
                           fontFamily: "Plus Jakarta Sans,sans-serif",
                         }}
                       >
-                        {c ? c.name : "Income"}
+                        No income recorded yet.
                       </div>
-                      <div
-                        style={{
-                          fontSize: 16,
-                          fontWeight: 700,
-                          fontFamily: "JetBrains Mono,monospace",
-                          color: "var(--text)",
-                          marginTop: 3,
-                        }}
-                      >
-                        {fmtC(amt, currency)}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </Card>
-          </div>
+                    )}
+                  </div>
+                </Card>
+              </>
+            )}
+          </>
         )}
       </div>
 
@@ -3895,6 +4019,7 @@ export default function App() {
           onAdd={(t) => setTxns((p) => [t, ...p])}
           cats={cats}
           currency={currency}
+          userId={user.id}
         />
       )}
       {modal === "cats" && (
@@ -3905,6 +4030,7 @@ export default function App() {
             setCats(c);
             setModal(null);
           }}
+          userId={user.id}
         />
       )}
       {modal === "wallet" && (
@@ -3915,12 +4041,14 @@ export default function App() {
             setWallet(w);
             setModal(null);
           }}
+          userId={user.id}
         />
       )}
       {modal === "goal" && (
         <GoalModal
           onClose={() => setModal(null)}
           onAdd={(g) => setGoals((p) => [...p, g])}
+          userId={user.id}
         />
       )}
       {modal === "recur" && (
@@ -3929,6 +4057,7 @@ export default function App() {
           onAdd={(r) => setRecurring((p) => [...p, r])}
           cats={cats}
           currency={currency}
+          userId={user.id}
         />
       )}
       {modal === "bill" && (
@@ -3937,6 +4066,7 @@ export default function App() {
           onAdd={(b) => setBills((p) => [...p, b])}
           cats={cats}
           currency={currency}
+          userId={user.id}
         />
       )}
       {modal === "budget" && (
@@ -3948,6 +4078,7 @@ export default function App() {
             setBudgets(b);
             setModal(null);
           }}
+          userId={user.id}
         />
       )}
     </div>
