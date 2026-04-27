@@ -1,14 +1,3 @@
-// =====================================================
-// Flowly — Full App with Supabase Backend
-// src/App.jsx
-//
-// SETUP STEPS (one time):
-// 1. npm install @supabase/supabase-js recharts
-// 2. Create src/supabase.js with your keys
-// 3. Run schema.sql in Supabase SQL editor
-// 4. npm run dev
-// =====================================================
-
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { supabase } from "./supabase";
 import {
@@ -292,8 +281,7 @@ const MONTHLY_DATA = [
   { m: "Aug", inc: 5500, exp: 2900 },
 ];
 
-/* ── Flowly Logo ── */
-function FlowlyLogo({ size = 30 }) {
+function VaultaLogo({ size = 30 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
       <defs>
@@ -899,7 +887,7 @@ function AuthScreen({ onLogin }) {
               marginBottom: 14,
             }}
           >
-            <FlowlyLogo size={54} />
+            <VaultaLogo size={54} />
           </div>
           <div
             style={{
@@ -910,7 +898,7 @@ function AuthScreen({ onLogin }) {
               fontFamily: "Plus Jakarta Sans,sans-serif",
             }}
           >
-            Flowly
+            Vaulta
           </div>
           <div
             style={{
@@ -1865,7 +1853,7 @@ function exportCSV(txns, cats) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "flowly.csv";
+  a.download = "Vaulta.csv";
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -2097,7 +2085,7 @@ export default function App() {
         }}
       >
         <div style={{ textAlign: "center" }}>
-          <FlowlyLogo size={48} />
+          <VaultaLogo size={48} />
           <div
             style={{
               marginTop: 16,
@@ -2106,7 +2094,7 @@ export default function App() {
               fontFamily: "Plus Jakarta Sans,sans-serif",
             }}
           >
-            Loading Flowly...
+            Loading Vaulta...
           </div>
         </div>
       </div>
@@ -2157,7 +2145,7 @@ export default function App() {
             marginBottom: 22,
           }}
         >
-          <FlowlyLogo size={30} />
+          <VaultaLogo size={30} />
           <span
             style={{
               fontSize: 18,
@@ -2166,7 +2154,7 @@ export default function App() {
               letterSpacing: "-0.04em",
             }}
           >
-            Flowly
+            Vaulta
           </span>
           <button
             onClick={() => setSideOpen(false)}
