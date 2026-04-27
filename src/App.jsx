@@ -1,3 +1,14 @@
+// =====================================================
+// Flowly — Full App with Supabase Backend
+// src/App.jsx
+//
+// SETUP STEPS (one time):
+// 1. npm install @supabase/supabase-js recharts
+// 2. Create src/supabase.js with your keys
+// 3. Run schema.sql in Supabase SQL editor
+// 4. npm run dev
+// =====================================================
+
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { supabase } from "./supabase";
 import {
@@ -44,10 +55,7 @@ gs.textContent = `
   .ib:hover { opacity: .6; }
   .spinner { animation: spin 1s linear infinite; display: inline-block; }
   @media (max-width: 768px) {
-    .sidebar { transform: translateX(-100%); transition: transform .28s ease !important; }
-    .sidebar.open { transform: translateX(0) !important; }
     .main { margin-left: 0 !important; }
-    .menu-btn { display: flex !important; }
     .g2  { grid-template-columns: 1fr !important; }
     .g4  { grid-template-columns: 1fr 1fr !important; }
     .topbar { flex-wrap: wrap; }
@@ -284,8 +292,8 @@ const MONTHLY_DATA = [
   { m: "Aug", inc: 5500, exp: 2900 },
 ];
 
-/* ── vaulta Logo ── */
-function VaultaLogo({ size = 30 }) {
+/* ── Flowly Logo ── */
+function FlowlyLogo({ size = 30 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
       <defs>
@@ -891,7 +899,7 @@ function AuthScreen({ onLogin }) {
               marginBottom: 14,
             }}
           >
-            <VaultaLogo size={54} />
+            <FlowlyLogo size={54} />
           </div>
           <div
             style={{
@@ -902,7 +910,7 @@ function AuthScreen({ onLogin }) {
               fontFamily: "Plus Jakarta Sans,sans-serif",
             }}
           >
-            Vaulta
+            Flowly
           </div>
           <div
             style={{
@@ -1857,7 +1865,7 @@ function exportCSV(txns, cats) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "vaulta.csv";
+  a.download = "flowly.csv";
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -2089,7 +2097,7 @@ export default function App() {
         }}
       >
         <div style={{ textAlign: "center" }}>
-          <VaultaLogo size={48} />
+          <FlowlyLogo size={48} />
           <div
             style={{
               marginTop: 16,
@@ -2098,7 +2106,7 @@ export default function App() {
               fontFamily: "Plus Jakarta Sans,sans-serif",
             }}
           >
-            Loading Vaulta...
+            Loading Flowly...
           </div>
         </div>
       </div>
@@ -2124,7 +2132,6 @@ export default function App() {
 
       {/* ── SIDEBAR ── */}
       <div
-        className={"sidebar" + (sideOpen ? " open" : "")}
         style={{
           width: 205,
           background: "var(--panel)",
@@ -2137,6 +2144,7 @@ export default function App() {
           left: 0,
           zIndex: 200,
           padding: "16px 10px",
+          transform: sideOpen ? "translateX(0)" : "translateX(-100%)",
           transition: "transform .28s cubic-bezier(.4,0,.2,1)",
         }}
       >
@@ -2149,7 +2157,7 @@ export default function App() {
             marginBottom: 22,
           }}
         >
-          <VaultaLogo size={30} />
+          <FlowlyLogo size={30} />
           <span
             style={{
               fontSize: 18,
@@ -2158,7 +2166,7 @@ export default function App() {
               letterSpacing: "-0.04em",
             }}
           >
-            Vaulta
+            Flowly
           </span>
           <button
             onClick={() => setSideOpen(false)}
@@ -2380,7 +2388,7 @@ export default function App() {
           flex: 1,
           padding: "20px 24px",
           overflowX: "hidden",
-          transition: "margin .28s cubic-bezier(.4,0,.2,1)",
+          transition: "margin-left .28s cubic-bezier(.4,0,.2,1)",
         }}
       >
         {/* Topbar */}
