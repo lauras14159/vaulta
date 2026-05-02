@@ -1,3 +1,8 @@
+// =====================================================
+// Vaulta — Full App with Supabase Backend
+// src/App.jsx
+// =====================================================
+
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { supabase } from "./supabase";
 import {
@@ -31,7 +36,7 @@ gs.textContent = `
   input:-webkit-autofill { -webkit-box-shadow: 0 0 0 30px var(--panel) inset !important; -webkit-text-fill-color: var(--text) !important; }
   select option { background: var(--panel); color: var(--text); }
   @keyframes fadeUp  { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:translateY(0); } }
-  @keyframes scaleIn { from { opacity:0; transform:scale(.95); }       to { opacity:1; transform:scale(1); } }
+  @keyframes scaleIn { from { opacity:0; transform:scale(.95); } to { opacity:1; transform:scale(1); } }
   @keyframes spin    { to { transform: rotate(360deg); } }
   .fu  { animation: fadeUp .38s ease both; }
   .fu1 { animation: fadeUp .38s .06s ease both; }
@@ -40,20 +45,18 @@ gs.textContent = `
   .si  { animation: scaleIn .26s ease both; }
   .hl  { transition: transform .2s, box-shadow .2s; }
   .hl:hover { transform: translateY(-2px); }
-  .ib  { background: none; border: none; cursor: pointer; transition: opacity .15s; }
-  .ib:hover { opacity: .6; }
+  .ib  { background: none; border: none; cursor: pointer; transition: all .15s; }
   .spinner { animation: spin 1s linear infinite; display: inline-block; }
+  .overlay-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 150; }
   @media (max-width: 768px) {
-    .main { margin-left: 0 !important; }
-    .g2  { grid-template-columns: 1fr !important; }
-    .g4  { grid-template-columns: 1fr 1fr !important; }
+    .g2 { grid-template-columns: 1fr !important; }
+    .g4 { grid-template-columns: 1fr 1fr !important; }
     .topbar { flex-wrap: wrap; }
   }
   @media (max-width: 480px) {
-    .g4  { grid-template-columns: 1fr !important; }
-    .main { padding: 14px !important; }
+    .g4 { grid-template-columns: 1fr !important; }
+    .main-pad { padding: 14px !important; }
   }
-  .overlay-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 150; }
 `;
 document.head.appendChild(gs);
 
@@ -281,16 +284,20 @@ const MONTHLY_DATA = [
   { m: "Aug", inc: 5500, exp: 2900 },
 ];
 
+const ICON_RAIL_W = 56;
+const SIDEBAR_W = 205;
+
+/* ── Vaulta Logo ── */
 function VaultaLogo({ size = 30 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 32 32" fill="none">
       <defs>
-        <linearGradient id="lg" x1="0" y1="0" x2="1" y2="1">
+        <linearGradient id="vlg" x1="0" y1="0" x2="1" y2="1">
           <stop offset="0%" stopColor="#6366f1" />
           <stop offset="100%" stopColor="#a78bfa" />
         </linearGradient>
       </defs>
-      <rect width="32" height="32" rx="9" fill="url(#lg)" />
+      <rect width="32" height="32" rx="9" fill="url(#vlg)" />
       <path
         d="M7 21 Q11 11 16 17 Q21 23 25 13"
         stroke="white"
@@ -565,7 +572,12 @@ function MH({ title, onClose }) {
       <button
         onClick={onClose}
         className="ib"
-        style={{ color: "var(--textMuted)", fontSize: 18, lineHeight: 1 }}
+        style={{
+          color: "var(--textMuted)",
+          fontSize: 20,
+          lineHeight: 1,
+          padding: "2px 6px",
+        }}
       >
         ✕
       </button>
@@ -718,13 +730,39 @@ function Spinner({ text = "Loading..." }) {
   );
 }
 
-function TxnRow({ t, cats, currency, onDelete }) {
+/* ── Icon button helper (bigger, cleaner) ── */
+function IconBtn({ icon, onClick, hoverColor = "var(--accent)", title = "" }) {
+  const [hov, setHov] = useState(false);
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      style={{
+        background: "none",
+        border: "none",
+        cursor: "pointer",
+        fontSize: 18,
+        padding: "6px 9px",
+        borderRadius: 7,
+        color: hov ? hoverColor : "var(--textMuted)",
+        transition: "all .15s",
+        lineHeight: 1,
+      }}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+    >
+      {icon}
+    </button>
+  );
+}
+
+/* ── Transaction Row ── */
+function TxnRow({ t, cats, currency, onDelete, onEdit }) {
   const cat = cats.find((c) => c.id === t.cat_id || c.id === t.catId) || {
     emoji: "📦",
     name: "Other",
     color: "#6b7280",
   };
-  const catId = t.cat_id || t.catId;
   return (
     <div
       style={{
@@ -799,26 +837,24 @@ function TxnRow({ t, cats, currency, onDelete }) {
         {t.type === "income" ? "+" : "-"}
         {fmtC(t.amount, t.currency)}
       </div>
-      <button
+      <IconBtn
+        icon="✎"
+        onClick={() => onEdit && onEdit(t)}
+        hoverColor="var(--accent)"
+        title="Edit"
+      />
+      <IconBtn
+        icon="✕"
         onClick={() => onDelete(t.id)}
-        className="ib"
-        style={{
-          marginLeft: 8,
-          color: "var(--textMuted)",
-          fontSize: 12,
-          padding: "3px 5px",
-          borderRadius: 5,
-        }}
-        onMouseEnter={(e) => (e.currentTarget.style.color = "var(--expense)")}
-        onMouseLeave={(e) => (e.currentTarget.style.color = "var(--textMuted)")}
-      >
-        ✕
-      </button>
+        hoverColor="var(--expense)"
+        title="Delete"
+      />
     </div>
   );
 }
 
-/* ── AUTH SCREEN ── */
+/* ══════════════ MODALS ══════════════ */
+
 function AuthScreen({ onLogin }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
@@ -1013,7 +1049,6 @@ function AuthScreen({ onLogin }) {
   );
 }
 
-/* ── ADD TRANSACTION MODAL ── */
 function AddTxnModal({ onClose, onAdd, cats, currency, userId }) {
   const [type, setType] = useState("expense");
   const [amount, setAmount] = useState("");
@@ -1028,18 +1063,17 @@ function AddTxnModal({ onClose, onAdd, cats, currency, userId }) {
   async function submit() {
     if (!amount || isNaN(+amount) || +amount <= 0) return;
     setLoading(true);
-    const row = {
-      user_id: userId,
-      type,
-      cat_id: catId,
-      amount: +amount,
-      note,
-      date,
-      currency: cur,
-    };
     const { data, error } = await supabase
       .from("transactions")
-      .insert(row)
+      .insert({
+        user_id: userId,
+        type,
+        cat_id: catId,
+        amount: +amount,
+        note,
+        date,
+        currency: cur,
+      })
       .select()
       .single();
     if (!error && data) onAdd(data);
@@ -1143,36 +1177,158 @@ function AddTxnModal({ onClose, onAdd, cats, currency, userId }) {
   );
 }
 
-/* ── CATEGORIES MODAL ── */
+function EditTxnModal({ onClose, onSave, txn, cats, currency }) {
+  const [type, setType] = useState(txn.type);
+  const [amount, setAmount] = useState(String(txn.amount));
+  const [catId, setCatId] = useState(txn.cat_id || txn.catId || "");
+  const [note, setNote] = useState(txn.note || "");
+  const [date, setDate] = useState(txn.date || "");
+  const [cur, setCur] = useState(txn.currency || currency);
+  const [loading, setLoading] = useState(false);
+
+  async function save() {
+    if (!amount || isNaN(+amount) || +amount <= 0) return;
+    setLoading(true);
+    const { data } = await supabase
+      .from("transactions")
+      .update({
+        type,
+        cat_id: catId,
+        amount: +amount,
+        note,
+        date,
+        currency: cur,
+      })
+      .eq("id", txn.id)
+      .select()
+      .single();
+    if (data) onSave(data);
+    setLoading(false);
+    onClose();
+  }
+
+  return (
+    <Modal onClose={onClose}>
+      <MH title="Edit Transaction" onClose={onClose} />
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        {["income", "expense"].map((t) => (
+          <button
+            key={t}
+            onClick={() => {
+              setType(t);
+              setCatId(cats.filter((c) => c.type === t)[0]?.id || "");
+            }}
+            style={{
+              flex: 1,
+              padding: "9px 0",
+              borderRadius: 10,
+              border: "2px solid",
+              cursor: "pointer",
+              fontFamily: "Plus Jakarta Sans,sans-serif",
+              fontSize: 13,
+              fontWeight: 600,
+              transition: "all .2s",
+              borderColor:
+                type === t
+                  ? t === "income"
+                    ? "var(--income)"
+                    : "var(--expense)"
+                  : "var(--border)",
+              background:
+                type === t
+                  ? t === "income"
+                    ? "var(--incomeBg)"
+                    : "var(--expenseBg)"
+                  : "transparent",
+              color:
+                type === t
+                  ? t === "income"
+                    ? "var(--income)"
+                    : "var(--expense)"
+                  : "var(--textSub)",
+            }}
+          >
+            {t === "income" ? "⬆ Income" : "⬇ Expense"}
+          </button>
+        ))}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <Field
+          label="Amount"
+          type="number"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder="0.00"
+          prefix={getCur(cur).sym}
+        />
+        <Sel
+          label="Currency"
+          value={cur}
+          onChange={(e) => setCur(e.target.value)}
+          options={CURRENCIES.map((c) => ({
+            value: c.code,
+            label: c.sym + " " + c.code,
+          }))}
+        />
+      </div>
+      <Sel
+        label="Category"
+        value={catId}
+        onChange={(e) => setCatId(e.target.value)}
+        options={cats
+          .filter((c) => c.type === type)
+          .map((c) => ({ value: c.id, label: c.emoji + " " + c.name }))}
+      />
+      <Field
+        label="Note"
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="What was this for?"
+      />
+      <Field
+        label="Date"
+        type="date"
+        value={date}
+        onChange={(e) => setDate(e.target.value)}
+      />
+      <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+        <Btn variant="outline" full onClick={onClose}>
+          Cancel
+        </Btn>
+        <Btn full onClick={save} loading={loading}>
+          Save Changes
+        </Btn>
+      </div>
+    </Modal>
+  );
+}
+
 function CatsModal({ onClose, cats, onSave, userId }) {
   const [list, setList] = useState(cats);
   const [nm, setNm] = useState("");
   const [em, setEm] = useState("💡");
   const [col, setCol] = useState("#6366f1");
   const [tp, setTp] = useState("expense");
-  const [saving, setSaving] = useState(false);
 
   async function addCat() {
     if (!nm.trim()) return;
-    const row = {
-      user_id: userId,
-      type: tp,
-      name: nm.trim(),
-      emoji: em,
-      color: col,
-    };
     const { data } = await supabase
       .from("categories")
-      .insert(row)
+      .insert({
+        user_id: userId,
+        type: tp,
+        name: nm.trim(),
+        emoji: em,
+        color: col,
+      })
       .select()
       .single();
-    if (data) setList((prev) => [...prev, data]);
+    if (data) setList((p) => [...p, data]);
     setNm("");
   }
-
   async function removeCat(id) {
     await supabase.from("categories").delete().eq("id", id);
-    setList((prev) => prev.filter((x) => x.id !== id));
+    setList((p) => p.filter((x) => x.id !== id));
   }
 
   return (
@@ -1242,6 +1398,8 @@ function CatsModal({ onClose, cats, onSave, userId }) {
             </select>
           </div>
         </div>
+
+        {/* emoji picker */}
         <div
           style={{
             fontSize: 11,
@@ -1255,6 +1413,51 @@ function CatsModal({ onClose, cats, onSave, userId }) {
         >
           Emoji
         </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 8,
+          }}
+        >
+          <div
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 8,
+              border: "2px solid var(--borderFocus)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 20,
+              flexShrink: 0,
+              background: "var(--accentBg)",
+            }}
+          >
+            {em}
+          </div>
+          <input
+            value={em}
+            onChange={(e) => setEm(e.target.value)}
+            placeholder="Type or paste any emoji 😊"
+            maxLength={4}
+            style={{
+              flex: 1,
+              background: "var(--card)",
+              border: "1px solid var(--border)",
+              borderRadius: 9,
+              padding: "8px 11px",
+              color: "var(--text)",
+              fontSize: 13,
+              fontFamily: "Plus Jakarta Sans,sans-serif",
+              outline: "none",
+            }}
+            onFocus={(e) => (e.target.style.borderColor = "var(--borderFocus)")}
+            onBlur={(e) => (e.target.style.borderColor = "var(--border)")}
+          />
+        </div>
+        {/* quick emoji grid */}
         <div
           style={{
             display: "flex",
@@ -1282,6 +1485,7 @@ function CatsModal({ onClose, cats, onSave, userId }) {
             </button>
           ))}
         </div>
+
         <div
           style={{
             fontSize: 11,
@@ -1330,6 +1534,7 @@ function CatsModal({ onClose, cats, onSave, userId }) {
           + Add
         </Btn>
       </div>
+
       <div
         style={{
           display: "flex",
@@ -1379,13 +1584,11 @@ function CatsModal({ onClose, cats, onSave, userId }) {
               {c.type}
             </Tag>
             {c.user_id && (
-              <button
+              <IconBtn
+                icon="✕"
                 onClick={() => removeCat(c.id)}
-                className="ib"
-                style={{ color: "var(--textMuted)", fontSize: 12 }}
-              >
-                ✕
-              </button>
+                hoverColor="var(--expense)"
+              />
             )}
           </div>
         ))}
@@ -1397,7 +1600,6 @@ function CatsModal({ onClose, cats, onSave, userId }) {
   );
 }
 
-/* ── WALLET MODAL ── */
 function WalletModal({ onClose, wallet, onSave, userId }) {
   const [cash, setCash] = useState(String(wallet.cash));
   const [bank, setBank] = useState(String(wallet.bank));
@@ -1406,13 +1608,15 @@ function WalletModal({ onClose, wallet, onSave, userId }) {
 
   async function save() {
     setLoading(true);
-    const row = {
-      user_id: userId,
-      cash: +cash || 0,
-      bank: +bank || 0,
-      savings: +sav || 0,
-    };
-    await supabase.from("wallet").upsert(row, { onConflict: "user_id" });
+    await supabase.from("wallet").upsert(
+      {
+        user_id: userId,
+        cash: +cash || 0,
+        bank: +bank || 0,
+        savings: +sav || 0,
+      },
+      { onConflict: "user_id" },
+    );
     onSave({ cash: +cash || 0, bank: +bank || 0, savings: +sav || 0 });
     setLoading(false);
     onClose();
@@ -1462,7 +1666,6 @@ function WalletModal({ onClose, wallet, onSave, userId }) {
   );
 }
 
-/* ── GOAL MODAL ── */
 function GoalModal({ onClose, onAdd, userId }) {
   const [name, setName] = useState("");
   const [target, setTarget] = useState("");
@@ -1488,15 +1691,18 @@ function GoalModal({ onClose, onAdd, userId }) {
   async function submit() {
     if (!name || !target) return;
     setLoading(true);
-    const row = {
-      user_id: userId,
-      name,
-      target: +target,
-      saved: +saved || 0,
-      emoji,
-      deadline: dl || null,
-    };
-    const { data } = await supabase.from("goals").insert(row).select().single();
+    const { data } = await supabase
+      .from("goals")
+      .insert({
+        user_id: userId,
+        name,
+        target: +target,
+        saved: +saved || 0,
+        emoji,
+        deadline: dl || null,
+      })
+      .select()
+      .single();
     if (data) onAdd(data);
     setLoading(false);
     onClose();
@@ -1562,7 +1768,6 @@ function GoalModal({ onClose, onAdd, userId }) {
   );
 }
 
-/* ── RECURRING MODAL ── */
 function RecurModal({ onClose, onAdd, cats, currency, userId }) {
   const [catId, setCatId] = useState(
     cats.filter((c) => c.type === "expense")[0]?.id || "",
@@ -1577,18 +1782,17 @@ function RecurModal({ onClose, onAdd, cats, currency, userId }) {
   async function submit() {
     if (!amount) return;
     setLoading(true);
-    const row = {
-      user_id: userId,
-      cat_id: catId,
-      amount: +amount,
-      note,
-      frequency: freq,
-      next_date: next,
-      currency: cur,
-    };
     const { data } = await supabase
       .from("recurring")
-      .insert(row)
+      .insert({
+        user_id: userId,
+        cat_id: catId,
+        amount: +amount,
+        note,
+        frequency: freq,
+        next_date: next,
+        currency: cur,
+      })
       .select()
       .single();
     if (data) onAdd(data);
@@ -1654,7 +1858,98 @@ function RecurModal({ onClose, onAdd, cats, currency, userId }) {
   );
 }
 
-/* ── BILL MODAL ── */
+function EditRecurModal({ onClose, onSave, recur, cats }) {
+  const [catId, setCatId] = useState(recur.cat_id || "");
+  const [amount, setAmount] = useState(String(recur.amount));
+  const [note, setNote] = useState(recur.note || "");
+  const [freq, setFreq] = useState(recur.frequency || "monthly");
+  const [next, setNext] = useState(recur.next_date || "");
+  const [cur, setCur] = useState(recur.currency || "USD");
+  const [loading, setLoading] = useState(false);
+
+  async function save() {
+    setLoading(true);
+    const { data } = await supabase
+      .from("recurring")
+      .update({
+        cat_id: catId,
+        amount: +amount || 0,
+        note,
+        frequency: freq,
+        next_date: next,
+        currency: cur,
+      })
+      .eq("id", recur.id)
+      .select()
+      .single();
+    if (data) onSave(data);
+    setLoading(false);
+    onClose();
+  }
+
+  return (
+    <Modal onClose={onClose} width={380}>
+      <MH title="Edit Recurring" onClose={onClose} />
+      <Field
+        label="Amount"
+        type="number"
+        value={amount}
+        onChange={(e) => setAmount(e.target.value)}
+        placeholder="0.00"
+        prefix={getCur(cur).sym}
+      />
+      <Sel
+        label="Category"
+        value={catId}
+        onChange={(e) => setCatId(e.target.value)}
+        options={cats.map((c) => ({
+          value: c.id,
+          label: c.emoji + " " + c.name,
+        }))}
+      />
+      <Field
+        label="Note"
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="e.g. Netflix"
+      />
+      <Sel
+        label="Frequency"
+        value={freq}
+        onChange={(e) => setFreq(e.target.value)}
+        options={[
+          { value: "weekly", label: "Weekly" },
+          { value: "monthly", label: "Monthly" },
+          { value: "yearly", label: "Yearly" },
+        ]}
+      />
+      <Sel
+        label="Currency"
+        value={cur}
+        onChange={(e) => setCur(e.target.value)}
+        options={CURRENCIES.map((c) => ({
+          value: c.code,
+          label: c.sym + " " + c.code,
+        }))}
+      />
+      <Field
+        label="Next Date"
+        type="date"
+        value={next}
+        onChange={(e) => setNext(e.target.value)}
+      />
+      <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+        <Btn variant="outline" full onClick={onClose}>
+          Cancel
+        </Btn>
+        <Btn full onClick={save} loading={loading}>
+          Save Changes
+        </Btn>
+      </div>
+    </Modal>
+  );
+}
+
 function BillModal({ onClose, onAdd, cats, currency, userId }) {
   const [catId, setCatId] = useState(
     cats.filter((c) => c.type === "expense")[0]?.id || "",
@@ -1668,16 +1963,19 @@ function BillModal({ onClose, onAdd, cats, currency, userId }) {
   async function submit() {
     if (!note || !amount) return;
     setLoading(true);
-    const row = {
-      user_id: userId,
-      cat_id: catId,
-      amount: +amount,
-      note,
-      due_date: due,
-      paid: false,
-      currency: cur,
-    };
-    const { data } = await supabase.from("bills").insert(row).select().single();
+    const { data } = await supabase
+      .from("bills")
+      .insert({
+        user_id: userId,
+        cat_id: catId,
+        amount: +amount,
+        note,
+        due_date: due,
+        paid: false,
+        currency: cur,
+      })
+      .select()
+      .single();
     if (data) onAdd(data);
     setLoading(false);
     onClose();
@@ -1731,40 +2029,116 @@ function BillModal({ onClose, onAdd, cats, currency, userId }) {
   );
 }
 
-/* ── BUDGET MODAL ── */
+function EditBillModal({ onClose, onSave, bill, cats }) {
+  const [note, setNote] = useState(bill.note || "");
+  const [amount, setAmount] = useState(String(bill.amount));
+  const [catId, setCatId] = useState(bill.cat_id || "");
+  const [due, setDue] = useState(bill.due_date || "");
+  const [cur, setCur] = useState(bill.currency || "USD");
+  const [loading, setLoading] = useState(false);
+
+  async function save() {
+    setLoading(true);
+    const { data } = await supabase
+      .from("bills")
+      .update({
+        note,
+        amount: +amount || 0,
+        cat_id: catId,
+        due_date: due,
+        currency: cur,
+      })
+      .eq("id", bill.id)
+      .select()
+      .single();
+    if (data) onSave(data);
+    setLoading(false);
+    onClose();
+  }
+
+  return (
+    <Modal onClose={onClose} width={380}>
+      <MH title="Edit Bill" onClose={onClose} />
+      <Field
+        label="Bill Name"
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="e.g. Electricity Bill"
+      />
+      <Field
+        label="Amount"
+        type="number"
+        value={amount}
+        onChange={(e) => setAmount(e.target.value)}
+        placeholder="0.00"
+        prefix={getCur(cur).sym}
+      />
+      <Sel
+        label="Category"
+        value={catId}
+        onChange={(e) => setCatId(e.target.value)}
+        options={cats.map((c) => ({
+          value: c.id,
+          label: c.emoji + " " + c.name,
+        }))}
+      />
+      <Sel
+        label="Currency"
+        value={cur}
+        onChange={(e) => setCur(e.target.value)}
+        options={CURRENCIES.map((c) => ({
+          value: c.code,
+          label: c.sym + " " + c.code,
+        }))}
+      />
+      <Field
+        label="Due Date"
+        type="date"
+        value={due}
+        onChange={(e) => setDue(e.target.value)}
+      />
+      <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+        <Btn variant="outline" full onClick={onClose}>
+          Cancel
+        </Btn>
+        <Btn full onClick={save} loading={loading}>
+          Save Changes
+        </Btn>
+      </div>
+    </Modal>
+  );
+}
+
 function BudgetModal({ onClose, cats, budgets, onSave, userId }) {
   const [list, setList] = useState(budgets);
   const expCats = cats.filter((c) => c.type === "expense");
 
   async function setLimit(id, val) {
-    setList((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, limit_amount: +val || 0 } : b)),
+    setList((p) =>
+      p.map((b) => (b.id === id ? { ...b, limit_amount: +val || 0 } : b)),
     );
     await supabase
       .from("budgets")
       .update({ limit_amount: +val || 0 })
       .eq("id", id);
   }
-
   async function addCat(catId) {
     if (!catId || list.find((b) => b.cat_id === catId)) return;
-    const row = {
-      user_id: userId,
-      cat_id: catId,
-      limit_amount: 0,
-      currency: "USD",
-    };
     const { data } = await supabase
       .from("budgets")
-      .insert(row)
+      .insert({
+        user_id: userId,
+        cat_id: catId,
+        limit_amount: 0,
+        currency: "USD",
+      })
       .select()
       .single();
-    if (data) setList((prev) => [...prev, data]);
+    if (data) setList((p) => [...p, data]);
   }
-
   async function removeBudget(id) {
     await supabase.from("budgets").delete().eq("id", id);
-    setList((prev) => prev.filter((x) => x.id !== id));
+    setList((p) => p.filter((x) => x.id !== id));
   }
 
   return (
@@ -1778,7 +2152,7 @@ function BudgetModal({ onClose, cats, budgets, onSave, userId }) {
           fontFamily: "Plus Jakarta Sans,sans-serif",
         }}
       >
-        Set monthly spending limits. Alerts when you hit 80%.
+        Set monthly spending limits. Alert fires at 80%.
       </div>
       {list.map((b) => {
         const cat = cats.find((c) => c.id === b.cat_id);
@@ -1811,13 +2185,11 @@ function BudgetModal({ onClose, cats, budgets, onSave, userId }) {
                 prefix="$"
               />
             </div>
-            <button
+            <IconBtn
+              icon="✕"
               onClick={() => removeBudget(b.id)}
-              className="ib"
-              style={{ color: "var(--textMuted)", fontSize: 12 }}
-            >
-              ✕
-            </button>
+              hoverColor="var(--expense)"
+            />
           </div>
         );
       })}
@@ -1841,6 +2213,158 @@ function BudgetModal({ onClose, cats, budgets, onSave, userId }) {
   );
 }
 
+/* ── Emergency Fund Add Contribution Modal ── */
+function EFContribModal({ onClose, onAdd, cur }) {
+  const [amount, setAmount] = useState("");
+  const [note, setNote] = useState("");
+  const [type, setType] = useState("add");
+  return (
+    <Modal onClose={onClose} width={360}>
+      <MH title="🛡️ Update Emergency Fund" onClose={onClose} />
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        {[
+          { v: "add", l: "➕ Add" },
+          { v: "withdraw", l: "➖ Withdraw" },
+        ].map((t) => (
+          <button
+            key={t.v}
+            onClick={() => setType(t.v)}
+            style={{
+              flex: 1,
+              padding: "9px 0",
+              borderRadius: 10,
+              border: "2px solid",
+              cursor: "pointer",
+              fontFamily: "Plus Jakarta Sans,sans-serif",
+              fontSize: 13,
+              fontWeight: 600,
+              transition: "all .2s",
+              borderColor:
+                type === t.v
+                  ? t.v === "add"
+                    ? "var(--income)"
+                    : "var(--expense)"
+                  : "var(--border)",
+              background:
+                type === t.v
+                  ? t.v === "add"
+                    ? "var(--incomeBg)"
+                    : "var(--expenseBg)"
+                  : "transparent",
+              color:
+                type === t.v
+                  ? t.v === "add"
+                    ? "var(--income)"
+                    : "var(--expense)"
+                  : "var(--textSub)",
+            }}
+          >
+            {t.l}
+          </button>
+        ))}
+      </div>
+      <Field
+        label="Amount"
+        type="number"
+        value={amount}
+        onChange={(e) => setAmount(e.target.value)}
+        placeholder="0.00"
+        prefix={cur.sym}
+      />
+      <Field
+        label="Note (optional)"
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="e.g. Monthly contribution"
+      />
+      <Btn
+        full
+        onClick={() => {
+          if (amount && +amount > 0) {
+            onAdd({
+              amount: +amount,
+              type,
+              note,
+              date: new Date().toISOString().split("T")[0],
+            });
+            onClose();
+          }
+        }}
+      >
+        Confirm
+      </Btn>
+    </Modal>
+  );
+}
+
+/* ── Emergency Fund Edit Entry Modal ── */
+function EFEditEntryModal({ onClose, entry, onSave, cur }) {
+  const [amount, setAmount] = useState(String(entry.amount));
+  const [note, setNote] = useState(entry.note || "");
+  return (
+    <Modal onClose={onClose} width={340}>
+      <MH title="Edit Entry" onClose={onClose} />
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "8px 12px",
+          background: "var(--card)",
+          borderRadius: 9,
+          marginBottom: 14,
+        }}
+      >
+        <span style={{ fontSize: 16 }}>
+          {entry.type === "add" ? "➕" : "➖"}
+        </span>
+        <span
+          style={{
+            fontSize: 12,
+            color: "var(--textSub)",
+            fontFamily: "Plus Jakarta Sans,sans-serif",
+          }}
+        >
+          {entry.date}
+        </span>
+        <Tag color={entry.type === "add" ? "var(--income)" : "var(--expense)"}>
+          {entry.type === "add" ? "Add" : "Withdraw"}
+        </Tag>
+      </div>
+      <Field
+        label="Amount"
+        type="number"
+        value={amount}
+        onChange={(e) => setAmount(e.target.value)}
+        placeholder="0.00"
+        prefix={cur.sym}
+      />
+      <Field
+        label="Note"
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="e.g. Monthly contribution"
+      />
+      <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+        <Btn variant="outline" full onClick={onClose}>
+          Cancel
+        </Btn>
+        <Btn
+          full
+          onClick={() => {
+            if (amount && +amount > 0) {
+              onSave(entry.id, +amount, note);
+              onClose();
+            }
+          }}
+        >
+          Save Changes
+        </Btn>
+      </div>
+    </Modal>
+  );
+}
+
 /* ── CSV Export ── */
 function exportCSV(txns, cats) {
   const header = "Date,Type,Category,Amount,Currency,Note";
@@ -1853,7 +2377,7 @@ function exportCSV(txns, cats) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = "Vaulta.csv";
+  a.download = "vaulta.csv";
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -1864,11 +2388,14 @@ function exportCSV(txns, cats) {
 export default function App() {
   const [dark, setDark] = useState(true);
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true); // initial auth check
-  const [view, setView] = useState("dashboard");
-  const [sideOpen, setSideOpen] = useState(true);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [view, setView] = useState(
+    () => sessionStorage.getItem("va_view") || "dashboard",
+  );
+  const [sideOpen, setSideOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
 
-  // Data states
+  // Data
   const [txns, setTxns] = useState([]);
   const [cats, setCats] = useState(DEF_CATS);
   const [wallet, setWallet] = useState({ cash: 0, bank: 0, savings: 0 });
@@ -1876,21 +2403,45 @@ export default function App() {
   const [recurring, setRecurring] = useState([]);
   const [bills, setBills] = useState([]);
   const [budgets, setBudgets] = useState([]);
+
+  // Emergency fund state
+  const [ef, setEf] = useState({
+    current: 0,
+    target: 0,
+    months: 6,
+    history: [],
+  });
+
   const [currency, setCurrency] = useState("USD");
   const [modal, setModal] = useState(null);
+  const [editItem, setEditItem] = useState(null);
   const [dataLoading, setDataLoading] = useState(false);
   const [ftype, setFtype] = useState("all");
   const [search, setSearch] = useState("");
+  const [efModal, setEfModal] = useState(false);
+  const [efEditEntry, setEfEditEntry] = useState(null); // {id, amount, note}
+  const [efTargetEdit, setEfTargetEdit] = useState(false);
+  const [efTargetVal, setEfTargetVal] = useState("");
 
   useEffect(() => {
     applyTheme(dark ? DARK : LIGHT);
   }, [dark]);
+  useEffect(() => {
+    sessionStorage.setItem("va_view", view);
+  }, [view]);
 
-  // ── Check existing session on load ──
+  // Mobile resize
+  useEffect(() => {
+    const h = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener("resize", h);
+    return () => window.removeEventListener("resize", h);
+  }, []);
+
+  // Auth
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) setUser(session.user);
-      setLoading(false);
+      setAuthLoading(false);
     });
     const {
       data: { subscription },
@@ -1900,7 +2451,6 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  // ── Load all user data when logged in ──
   const loadData = useCallback(async (userId) => {
     setDataLoading(true);
     const [txR, catR, walR, goaR, recR, bilR, budR] = await Promise.all([
@@ -1928,7 +2478,22 @@ export default function App() {
         bank: walR.data.bank,
         savings: walR.data.savings,
       });
-    if (goaR.data) setGoals(goaR.data);
+    if (goaR.data) {
+      // filter out emergency fund special goal
+      const efGoal = goaR.data.find((g) => g.name === "__ef__");
+      if (efGoal) {
+        let hist = [];
+        try {
+          if (efGoal.deadline) hist = JSON.parse(efGoal.deadline);
+        } catch (e) {}
+        setEf({
+          current: efGoal.saved || 0,
+          months: efGoal.target || 6,
+          history: hist,
+        });
+      }
+      setGoals(goaR.data.filter((g) => g.name !== "__ef__"));
+    }
     if (recR.data) setRecurring(recR.data);
     if (bilR.data) setBills(bilR.data);
     if (budR.data) setBudgets(budR.data);
@@ -1964,13 +2529,20 @@ export default function App() {
     fontSize: 11,
   };
 
+  const avgMonthlyExp = totExp > 0 ? totExp / 4 : 0; // based on current data
+  const efMonthsCovered =
+    avgMonthlyExp > 0 ? (ef.current / avgMonthlyExp).toFixed(1) : 0;
+  const efRecommended = avgMonthlyExp * ef.months;
+  const efPct =
+    efRecommended > 0 ? Math.min(100, (ef.current / efRecommended) * 100) : 0;
+
   const catExp = useMemo(() => {
     const m = {};
     txns
       .filter((t) => t.type === "expense")
       .forEach((t) => {
-        const key = t.cat_id || t.catId;
-        m[key] = (m[key] || 0) + t.amount;
+        const k = t.cat_id || t.catId;
+        m[k] = (m[k] || 0) + t.amount;
       });
     return Object.entries(m)
       .map(([catId, value]) => ({ catId, value }))
@@ -1995,9 +2567,8 @@ export default function App() {
 
   async function delTxn(id) {
     await supabase.from("transactions").delete().eq("id", id);
-    setTxns((prev) => prev.filter((x) => x.id !== id));
+    setTxns((p) => p.filter((x) => x.id !== id));
   }
-
   async function signOut() {
     await supabase.auth.signOut();
     setUser(null);
@@ -2009,56 +2580,155 @@ export default function App() {
     setCats(DEF_CATS);
     setWallet({ cash: 0, bank: 0, savings: 0 });
   }
-
   async function updateGoalSaved(id, val) {
-    setGoals((prev) =>
-      prev.map((g) => (g.id === id ? { ...g, saved: +val || 0 } : g)),
+    setGoals((p) =>
+      p.map((g) => (g.id === id ? { ...g, saved: +val || 0 } : g)),
     );
     await supabase
       .from("goals")
       .update({ saved: +val || 0 })
       .eq("id", id);
   }
-
   async function deleteGoal(id) {
     await supabase.from("goals").delete().eq("id", id);
-    setGoals((prev) => prev.filter((x) => x.id !== id));
+    setGoals((p) => p.filter((x) => x.id !== id));
   }
-
   async function deleteRecurring(id) {
     await supabase.from("recurring").delete().eq("id", id);
-    setRecurring((prev) => prev.filter((x) => x.id !== id));
+    setRecurring((p) => p.filter((x) => x.id !== id));
   }
-
   async function toggleBillPaid(id, current) {
     await supabase.from("bills").update({ paid: !current }).eq("id", id);
-    setBills((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, paid: !current } : b)),
-    );
+    setBills((p) => p.map((b) => (b.id === id ? { ...b, paid: !current } : b)));
   }
-
   async function deleteBill(id) {
     await supabase.from("bills").delete().eq("id", id);
-    setBills((prev) => prev.filter((x) => x.id !== id));
+    setBills((p) => p.filter((x) => x.id !== id));
+  }
+
+  // Emergency fund helpers
+  async function handleEfContrib({ amount, type, note, date }) {
+    const newAmt =
+      type === "add" ? ef.current + amount : Math.max(0, ef.current - amount);
+    const entry = { id: uid(), amount, type, note, date };
+    const newHistory = [entry, ...(ef.history || [])].slice(0, 50);
+    setEf((p) => ({ ...p, current: newAmt, history: newHistory }));
+    const histJson = JSON.stringify(newHistory);
+    const existing = await supabase
+      .from("goals")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("name", "__ef__")
+      .single();
+    if (existing.data) {
+      await supabase
+        .from("goals")
+        .update({ saved: newAmt, target: ef.months, deadline: histJson })
+        .eq("id", existing.data.id);
+    } else {
+      await supabase.from("goals").insert({
+        user_id: user.id,
+        name: "__ef__",
+        emoji: "🛡️",
+        target: ef.months,
+        saved: newAmt,
+        deadline: histJson,
+      });
+    }
+  }
+
+  async function deleteEfEntry(entryId) {
+    const entry = ef.history.find((h) => h.id === entryId);
+    if (!entry) return;
+    // reverse the amount
+    const reversed =
+      entry.type === "add"
+        ? Math.max(0, ef.current - entry.amount)
+        : ef.current + entry.amount;
+    const newHistory = ef.history.filter((h) => h.id !== entryId);
+    setEf((p) => ({ ...p, current: reversed, history: newHistory }));
+    const histJson = JSON.stringify(newHistory);
+    const existing = await supabase
+      .from("goals")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("name", "__ef__")
+      .single();
+    if (existing.data) {
+      await supabase
+        .from("goals")
+        .update({ saved: reversed, deadline: histJson })
+        .eq("id", existing.data.id);
+    }
+  }
+
+  async function editEfEntry(entryId, newAmount, newNote) {
+    const entry = ef.history.find((h) => h.id === entryId);
+    if (!entry) return;
+    // reverse old, apply new
+    const withoutOld =
+      entry.type === "add"
+        ? ef.current - entry.amount
+        : ef.current + entry.amount;
+    const withNew =
+      entry.type === "add"
+        ? withoutOld + newAmount
+        : Math.max(0, withoutOld - newAmount);
+    const newHistory = ef.history.map((h) =>
+      h.id === entryId ? { ...h, amount: newAmount, note: newNote } : h,
+    );
+    setEf((p) => ({ ...p, current: withNew, history: newHistory }));
+    const histJson = JSON.stringify(newHistory);
+    const existing = await supabase
+      .from("goals")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("name", "__ef__")
+      .single();
+    if (existing.data) {
+      await supabase
+        .from("goals")
+        .update({ saved: withNew, deadline: histJson })
+        .eq("id", existing.data.id);
+    }
+  }
+  async function saveEfTarget(months) {
+    setEf((p) => ({ ...p, months: +months || 6 }));
+    setEfTargetEdit(false);
+    const histJson = JSON.stringify(ef.history || []);
+    const existing = await supabase
+      .from("goals")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("name", "__ef__")
+      .single();
+    if (existing.data)
+      await supabase
+        .from("goals")
+        .update({ target: +months || 6, deadline: histJson })
+        .eq("id", existing.data.id);
+    else
+      await supabase.from("goals").insert({
+        user_id: user.id,
+        name: "__ef__",
+        emoji: "🛡️",
+        target: +months || 6,
+        saved: ef.current,
+        deadline: histJson,
+      });
   }
 
   const upcomingBills = bills
     .filter((b) => !b.paid)
-    .sort(
-      (a, b) =>
-        new Date(a.due_date || a.dueDate) - new Date(b.due_date || b.dueDate),
-    );
-  const overdueBills = upcomingBills.filter(
-    (b) => daysUntil(b.due_date || b.dueDate) < 0,
-  );
+    .sort((a, b) => new Date(a.due_date) - new Date(b.due_date));
+  const overdueBills = upcomingBills.filter((b) => daysUntil(b.due_date) < 0);
   const budgetAlerts = budgets.filter((b) => {
-    if ((b.limit_amount || b.limit || 0) <= 0) return false;
+    if ((b.limit_amount || 0) <= 0) return false;
     const spent = txns
       .filter((t) => t.type === "expense" && (t.cat_id || t.catId) === b.cat_id)
       .reduce((s, t) => s + t.amount, 0);
-    return spent / (b.limit_amount || b.limit) > 0.8;
+    return spent / (b.limit_amount || 1) > 0.8;
   });
-
   const userName =
     user?.user_metadata?.full_name || user?.email?.split("@")[0] || "User";
 
@@ -2069,11 +2739,20 @@ export default function App() {
     { id: "recurring", icon: "🔁", label: "Recurring" },
     { id: "bills", icon: "📅", label: "Bills" },
     { id: "goals", icon: "🎯", label: "Goals" },
+    { id: "emergency", icon: "🛡️", label: "Emergency" },
     { id: "analytics", icon: "◈", label: "Analytics" },
   ];
 
-  // ── Initial load spinner ──
-  if (loading)
+  // Sidebar geometry
+  const desktopMargin = sideOpen ? SIDEBAR_W : ICON_RAIL_W;
+  const mainMarginLeft = isMobile ? 0 : desktopMargin;
+  const sideTransform = isMobile
+    ? sideOpen
+      ? "translateX(0)"
+      : `translateX(-${SIDEBAR_W}px)`
+    : "translateX(0)"; // always visible on desktop (icon rail or full)
+
+  if (authLoading)
     return (
       <div
         style={{
@@ -2115,13 +2794,13 @@ export default function App() {
       <div
         className="overlay-bg"
         onClick={() => setSideOpen(false)}
-        style={{ display: sideOpen ? "block" : "none", zIndex: 150 }}
+        style={{ display: isMobile && sideOpen ? "block" : "none" }}
       />
 
       {/* ── SIDEBAR ── */}
       <div
         style={{
-          width: 205,
+          width: isMobile ? SIDEBAR_W : sideOpen ? SIDEBAR_W : ICON_RAIL_W,
           background: "var(--panel)",
           borderRight: "1px solid var(--border)",
           display: "flex",
@@ -2131,252 +2810,348 @@ export default function App() {
           bottom: 0,
           left: 0,
           zIndex: 200,
-          padding: "16px 10px",
-          transform: sideOpen ? "translateX(0)" : "translateX(-100%)",
-          transition: "transform .28s cubic-bezier(.4,0,.2,1)",
+          padding: isMobile ? "14px 10px" : sideOpen ? "14px 10px" : "14px 0",
+          transform: isMobile
+            ? sideOpen
+              ? "translateX(0)"
+              : `translateX(-${SIDEBAR_W}px)`
+            : "translateX(0)",
+          transition:
+            "transform .3s cubic-bezier(.4,0,.2,1), width .3s cubic-bezier(.4,0,.2,1), padding .3s cubic-bezier(.4,0,.2,1)",
+          overflow: "hidden",
         }}
       >
+        {/* Header */}
         <div
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 9,
-            paddingLeft: 4,
-            marginBottom: 22,
+            gap: 8,
+            marginBottom: 20,
+            paddingLeft: !isMobile && !sideOpen ? 0 : 4,
+            justifyContent: !isMobile && !sideOpen ? "center" : "flex-start",
           }}
         >
-          <VaultaLogo size={30} />
-          <span
-            style={{
-              fontSize: 18,
-              fontWeight: 800,
-              color: "var(--text)",
-              letterSpacing: "-0.04em",
-            }}
-          >
-            Vaulta
-          </span>
+          {/* Toggle button — always leftmost */}
           <button
-            onClick={() => setSideOpen(false)}
-            className="ib"
+            onClick={() => setSideOpen((p) => !p)}
             style={{
-              marginLeft: "auto",
-              color: "var(--textMuted)",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
               fontSize: 18,
+              color: "var(--textSub)",
+              padding: "4px 6px",
+              borderRadius: 7,
+              flexShrink: 0,
+              lineHeight: 1,
+              transition: "color .15s",
             }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--text)")}
+            onMouseLeave={(e) =>
+              (e.currentTarget.style.color = "var(--textSub)")
+            }
           >
-            ✕
+            {sideOpen && !isMobile ? "✕" : "☰"}
           </button>
+          {/* Logo + name — hide when icon-only */}
+          {(sideOpen || isMobile) && (
+            <>
+              <VaultaLogo size={28} />
+              <span
+                style={{
+                  fontSize: 17,
+                  fontWeight: 800,
+                  color: "var(--text)",
+                  letterSpacing: "-0.04em",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Vaulta
+              </span>
+            </>
+          )}
         </div>
 
-        <nav style={{ flex: 1, overflowY: "auto" }}>
-          {NAV.map((n) => (
+        {/* Nav */}
+        <nav style={{ flex: 1, overflowY: "auto", overflowX: "hidden" }}>
+          {NAV.map((n) => {
+            const isActive = view === n.id;
+            const iconOnly = !isMobile && !sideOpen;
+            return (
+              <button
+                key={n.id}
+                onClick={() => {
+                  setView(n.id);
+                  if (isMobile) setSideOpen(false);
+                }}
+                title={iconOnly ? n.label : ""}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: iconOnly ? "center" : "flex-start",
+                  gap: 9,
+                  padding: iconOnly ? "10px 0" : "9px 10px",
+                  borderRadius: 9,
+                  border: "none",
+                  marginBottom: 2,
+                  fontSize: 13,
+                  fontWeight: 600,
+                  width: "100%",
+                  cursor: "pointer",
+                  transition: "all .2s",
+                  fontFamily: "Plus Jakarta Sans,sans-serif",
+                  background: isActive ? "var(--accentBg)" : "transparent",
+                  color: isActive ? "var(--accent)" : "var(--textSub)",
+                  position: "relative",
+                }}
+              >
+                <span style={{ fontSize: iconOnly ? 18 : 15, flexShrink: 0 }}>
+                  {n.icon}
+                </span>
+                {!iconOnly && (
+                  <span style={{ whiteSpace: "nowrap" }}>{n.label}</span>
+                )}
+                {n.id === "bills" && overdueBills.length > 0 && (
+                  <span
+                    style={{
+                      marginLeft: iconOnly ? undefined : "auto",
+                      position: iconOnly ? "absolute" : undefined,
+                      top: iconOnly ? 6 : undefined,
+                      right: iconOnly ? 4 : undefined,
+                      background: "var(--expense)",
+                      color: "#fff",
+                      borderRadius: "50%",
+                      width: 15,
+                      height: 15,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 9,
+                      fontWeight: 700,
+                    }}
+                  >
+                    {overdueBills.length}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+
+          {/* Categories & Budgets — only when expanded */}
+          {(sideOpen || isMobile) && (
+            <>
+              <div
+                style={{
+                  borderTop: "1px solid var(--border)",
+                  marginTop: 8,
+                  paddingTop: 8,
+                }}
+              >
+                <button
+                  onClick={() => setModal("cats")}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 9,
+                    padding: "9px 10px",
+                    borderRadius: 9,
+                    border: "1px dashed var(--border)",
+                    marginBottom: 4,
+                    fontSize: 13,
+                    fontWeight: 600,
+                    width: "100%",
+                    cursor: "pointer",
+                    fontFamily: "Plus Jakarta Sans,sans-serif",
+                    background: "transparent",
+                    color: "var(--textMuted)",
+                  }}
+                >
+                  ⊕ Categories
+                </button>
+                <button
+                  onClick={() => setModal("budget")}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 9,
+                    padding: "9px 10px",
+                    borderRadius: 9,
+                    border: "1px dashed var(--border)",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    width: "100%",
+                    cursor: "pointer",
+                    fontFamily: "Plus Jakarta Sans,sans-serif",
+                    background: "transparent",
+                    color: "var(--textMuted)",
+                  }}
+                >
+                  🎯 Budgets
+                </button>
+              </div>
+            </>
+          )}
+        </nav>
+
+        {/* Bottom */}
+        {(sideOpen || isMobile) && (
+          <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
             <button
-              key={n.id}
-              onClick={() => {
-                setView(n.id);
-                setSideOpen(false);
-              }}
+              onClick={() => setDark((p) => !p)}
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 9,
-                padding: "9px 10px",
+                gap: 8,
+                padding: "8px 10px",
                 borderRadius: 9,
-                border: "none",
-                marginBottom: 1,
-                fontSize: 13,
-                fontWeight: 600,
                 width: "100%",
+                border: "none",
                 cursor: "pointer",
-                transition: "all .2s",
                 fontFamily: "Plus Jakarta Sans,sans-serif",
-                background: view === n.id ? "var(--accentBg)" : "transparent",
-                color: view === n.id ? "var(--accent)" : "var(--textSub)",
+                fontSize: 12,
+                fontWeight: 600,
+                marginBottom: 8,
+                background: "var(--card)",
+                color: "var(--textSub)",
               }}
             >
-              <span style={{ fontSize: 15 }}>{n.icon}</span>
-              {n.label}
-              {n.id === "bills" && overdueBills.length > 0 && (
-                <span
+              <span>{dark ? "☀️" : "🌙"}</span>
+              {dark ? "Light Mode" : "Dark Mode"}
+            </button>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "7px 9px",
+                borderRadius: 9,
+                background: "var(--card)",
+                marginBottom: 6,
+              }}
+            >
+              <div
+                style={{
+                  width: 26,
+                  height: 26,
+                  borderRadius: 7,
+                  background:
+                    "linear-gradient(135deg,var(--accent),var(--purple))",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: "#fff",
+                  flexShrink: 0,
+                }}
+              >
+                {userName[0].toUpperCase()}
+              </div>
+              <div style={{ flex: 1, overflow: "hidden" }}>
+                <div
                   style={{
-                    marginLeft: "auto",
-                    background: "var(--expense)",
-                    color: "#fff",
-                    borderRadius: "50%",
-                    width: 16,
-                    height: 16,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 9,
-                    fontWeight: 700,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: "var(--text)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
                   }}
                 >
-                  {overdueBills.length}
-                </span>
-              )}
+                  {userName}
+                </div>
+                <div
+                  style={{
+                    fontSize: 10,
+                    color: "var(--textMuted)",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {user.email}
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={signOut}
+              style={{
+                width: "100%",
+                padding: "7px 10px",
+                borderRadius: 8,
+                border: "none",
+                cursor: "pointer",
+                fontFamily: "Plus Jakarta Sans,sans-serif",
+                fontSize: 12,
+                fontWeight: 600,
+                background: "transparent",
+                color: "var(--textMuted)",
+                textAlign: "left",
+              }}
+            >
+              ← Sign Out
             </button>
-          ))}
+          </div>
+        )}
+
+        {/* Icon-only bottom: theme + signout as icons */}
+        {!isMobile && !sideOpen && (
           <div
             style={{
               borderTop: "1px solid var(--border)",
-              marginTop: 8,
-              paddingTop: 8,
+              paddingTop: 10,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              gap: 4,
             }}
           >
             <button
-              onClick={() => setModal("cats")}
+              onClick={() => setDark((p) => !p)}
+              title={dark ? "Light Mode" : "Dark Mode"}
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 9,
-                padding: "9px 10px",
-                borderRadius: 9,
-                border: "1px dashed var(--border)",
-                marginBottom: 4,
-                fontSize: 13,
-                fontWeight: 600,
-                width: "100%",
+                background: "none",
+                border: "none",
                 cursor: "pointer",
-                fontFamily: "Plus Jakarta Sans,sans-serif",
-                background: "transparent",
-                color: "var(--textMuted)",
-              }}
-            >
-              ⊕ Categories
-            </button>
-            <button
-              onClick={() => setModal("budget")}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 9,
-                padding: "9px 10px",
-                borderRadius: 9,
-                border: "1px dashed var(--border)",
-                fontSize: 13,
-                fontWeight: 600,
-                width: "100%",
-                cursor: "pointer",
-                fontFamily: "Plus Jakarta Sans,sans-serif",
-                background: "transparent",
-                color: "var(--textMuted)",
-              }}
-            >
-              🎯 Budgets
-            </button>
-          </div>
-        </nav>
-
-        <div style={{ borderTop: "1px solid var(--border)", paddingTop: 12 }}>
-          <button
-            onClick={() => setDark((p) => !p)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "8px 10px",
-              borderRadius: 9,
-              width: "100%",
-              border: "none",
-              cursor: "pointer",
-              fontFamily: "Plus Jakarta Sans,sans-serif",
-              fontSize: 12,
-              fontWeight: 600,
-              marginBottom: 8,
-              background: "var(--card)",
-              color: "var(--textSub)",
-            }}
-          >
-            <span>{dark ? "☀️" : "🌙"}</span>
-            {dark ? "Light Mode" : "Dark Mode"}
-          </button>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "7px 9px",
-              borderRadius: 9,
-              background: "var(--card)",
-              marginBottom: 6,
-            }}
-          >
-            <div
-              style={{
-                width: 26,
-                height: 26,
+                fontSize: 16,
+                padding: "6px",
                 borderRadius: 7,
-                background:
-                  "linear-gradient(135deg,var(--accent),var(--purple))",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                fontSize: 11,
-                fontWeight: 700,
-                color: "#fff",
-                flexShrink: 0,
+                color: "var(--textSub)",
+                lineHeight: 1,
               }}
             >
-              {userName[0].toUpperCase()}
-            </div>
-            <div style={{ flex: 1, overflow: "hidden" }}>
-              <div
-                style={{
-                  fontSize: 12,
-                  fontWeight: 600,
-                  color: "var(--text)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {userName}
-              </div>
-              <div
-                style={{
-                  fontSize: 10,
-                  color: "var(--textMuted)",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                {user.email}
-              </div>
-            </div>
+              {dark ? "☀️" : "🌙"}
+            </button>
+            <button
+              onClick={signOut}
+              title="Sign Out"
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                fontSize: 14,
+                padding: "6px",
+                borderRadius: 7,
+                color: "var(--textMuted)",
+                lineHeight: 1,
+              }}
+            >
+              ⏻
+            </button>
           </div>
-          <button
-            onClick={signOut}
-            style={{
-              width: "100%",
-              padding: "7px 10px",
-              borderRadius: 8,
-              border: "none",
-              cursor: "pointer",
-              fontFamily: "Plus Jakarta Sans,sans-serif",
-              fontSize: 12,
-              fontWeight: 600,
-              background: "transparent",
-              color: "var(--textMuted)",
-              textAlign: "left",
-            }}
-          >
-            ← Sign Out
-          </button>
-        </div>
+        )}
       </div>
 
-      {/* ── MAIN ── */}
+      {/* ── MAIN CONTENT ── */}
       <div
-        className="main"
+        className="main-pad"
         style={{
-          marginLeft: sideOpen ? 205 : 0,
+          marginLeft: mainMarginLeft,
           flex: 1,
           padding: "20px 24px",
           overflowX: "hidden",
-          transition: "margin-left .28s cubic-bezier(.4,0,.2,1)",
+          transition: "margin-left .3s cubic-bezier(.4,0,.2,1)",
         }}
       >
         {/* Topbar */}
@@ -2392,18 +3167,23 @@ export default function App() {
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <button
-              className="ib"
-              onClick={() => setSideOpen((p) => !p)}
-              style={{
-                fontSize: 22,
-                color: "var(--text)",
-                padding: 4,
-                display: "flex",
-              }}
-            >
-              ☰
-            </button>
+            {/* Mobile ☰ — on desktop sidebar handles it */}
+            {isMobile && !sideOpen && (
+              <button
+                onClick={() => setSideOpen(true)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  fontSize: 22,
+                  color: "var(--text)",
+                  padding: 4,
+                }}
+              >
+                {" "}
+                ☰
+              </button>
+            )}
             <div>
               <div
                 style={{
@@ -2420,6 +3200,7 @@ export default function App() {
                 {view === "recurring" && "Recurring 🔁"}
                 {view === "bills" && "Bills 📅"}
                 {view === "goals" && "Goals 🎯"}
+                {view === "emergency" && "Emergency Fund 🛡️"}
                 {view === "analytics" && "Analytics 📊"}
               </div>
               <div
@@ -2487,6 +3268,11 @@ export default function App() {
             {view === "bills" && (
               <Btn variant="outline" size="sm" onClick={() => setModal("bill")}>
                 + Bill
+              </Btn>
+            )}
+            {view === "emergency" && (
+              <Btn variant="outline" size="sm" onClick={() => setEfModal(true)}>
+                + Update Fund
               </Btn>
             )}
             <Btn onClick={() => setModal("txn")}>+ Add</Btn>
@@ -2643,7 +3429,7 @@ export default function App() {
                         {upcomingBills
                           .slice(0, 3)
                           .map((b) => {
-                            const d = daysUntil(b.due_date || b.dueDate);
+                            const d = daysUntil(b.due_date);
                             return (
                               b.note +
                               " " +
@@ -2894,6 +3680,7 @@ export default function App() {
                           cats={cats}
                           currency={currency}
                           onDelete={delTxn}
+                          onEdit={(t) => setEditItem({ type: "txn", data: t })}
                         />
                       ))
                   )}
@@ -3157,6 +3944,7 @@ export default function App() {
                         cats={cats}
                         currency={currency}
                         onDelete={delTxn}
+                        onEdit={(t) => setEditItem({ type: "txn", data: t })}
                       />
                     ))
                   )}
@@ -3185,8 +3973,8 @@ export default function App() {
                           style={{
                             display: "flex",
                             justifyContent: "space-between",
-                            alignItems: "flex-start",
-                            marginBottom: 10,
+                            alignItems: "center",
+                            marginBottom: 12,
                           }}
                         >
                           <div
@@ -3203,13 +3991,22 @@ export default function App() {
                           >
                             {cat.emoji}
                           </div>
-                          <button
-                            onClick={() => deleteRecurring(r.id)}
-                            className="ib"
-                            style={{ color: "var(--textMuted)", fontSize: 12 }}
-                          >
-                            ✕
-                          </button>
+                          <div style={{ display: "flex", gap: 2 }}>
+                            <IconBtn
+                              icon="✎"
+                              onClick={() =>
+                                setEditItem({ type: "recur", data: r })
+                              }
+                              hoverColor="var(--accent)"
+                              title="Edit"
+                            />
+                            <IconBtn
+                              icon="✕"
+                              onClick={() => deleteRecurring(r.id)}
+                              hoverColor="var(--expense)"
+                              title="Delete"
+                            />
+                          </div>
                         </div>
                         <div
                           style={{
@@ -3334,7 +4131,7 @@ export default function App() {
                     const cat = cats.find(
                       (c) => c.id === (b.cat_id || b.catId),
                     ) || { emoji: "📦" };
-                    const d = daysUntil(b.due_date || b.dueDate);
+                    const d = daysUntil(b.due_date);
                     const urgent = !b.paid && d <= 3;
                     return (
                       <div
@@ -3410,7 +4207,7 @@ export default function App() {
                                 fontFamily: "JetBrains Mono,monospace",
                               }}
                             >
-                              {b.due_date || b.dueDate}
+                              {b.due_date}
                             </span>
                           </div>
                         </div>
@@ -3434,13 +4231,29 @@ export default function App() {
                             {b.paid ? "Unpay" : "Mark Paid"}
                           </Btn>
                         </div>
-                        <button
-                          onClick={() => deleteBill(b.id)}
-                          className="ib"
-                          style={{ color: "var(--textMuted)", fontSize: 12 }}
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 4,
+                            alignItems: "center",
+                          }}
                         >
-                          ✕
-                        </button>
+                          <IconBtn
+                            icon="✎"
+                            onClick={() =>
+                              setEditItem({ type: "bill", data: b })
+                            }
+                            hoverColor="var(--accent)"
+                            title="Edit"
+                          />
+                          <IconBtn
+                            icon="✕"
+                            onClick={() => deleteBill(b.id)}
+                            hoverColor="var(--expense)"
+                            title="Delete"
+                          />
+                        </div>
                       </div>
                     );
                   })}
@@ -3506,13 +4319,12 @@ export default function App() {
                           }}
                         >
                           <span style={{ fontSize: 28 }}>{g.emoji}</span>
-                          <button
+                          <IconBtn
+                            icon="✕"
                             onClick={() => deleteGoal(g.id)}
-                            className="ib"
-                            style={{ color: "var(--textMuted)", fontSize: 12 }}
-                          >
-                            ✕
-                          </button>
+                            hoverColor="var(--expense)"
+                            title="Delete"
+                          />
                         </div>
                         <div
                           style={{
@@ -3604,7 +4416,7 @@ export default function App() {
                             onChange={(e) =>
                               updateGoalSaved(g.id, e.target.value)
                             }
-                            placeholder="Update saved"
+                            placeholder="Update saved amount"
                             prefix="$"
                           />
                         </div>
@@ -3648,6 +4460,501 @@ export default function App() {
                       New Goal
                     </span>
                   </button>
+                </div>
+              </>
+            )}
+
+            {/* ═══ EMERGENCY FUND ═══ */}
+            {view === "emergency" && (
+              <>
+                {/* Hero card */}
+                <div
+                  className="fu"
+                  style={{
+                    background: "var(--panel)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 20,
+                    padding: 28,
+                    marginBottom: 18,
+                    boxShadow: "0 2px 8px var(--shadow)",
+                    position: "relative",
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: 4,
+                      background:
+                        "linear-gradient(90deg,var(--gFrom),var(--gTo))",
+                    }}
+                  />
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "flex-start",
+                      flexWrap: "wrap",
+                      gap: 16,
+                    }}
+                  >
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: "var(--textMuted)",
+                          letterSpacing: "0.07em",
+                          textTransform: "uppercase",
+                          fontFamily: "Plus Jakarta Sans,sans-serif",
+                          marginBottom: 8,
+                        }}
+                      >
+                        Emergency Fund
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 36,
+                          fontWeight: 800,
+                          color: "var(--income)",
+                          fontFamily: "JetBrains Mono,monospace",
+                          letterSpacing: "-0.02em",
+                        }}
+                      >
+                        {fmtC(ef.current, currency)}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 13,
+                          color: "var(--textSub)",
+                          marginTop: 6,
+                          fontFamily: "Plus Jakarta Sans,sans-serif",
+                        }}
+                      >
+                        Covers{" "}
+                        <b style={{ color: "var(--text)" }}>
+                          {efMonthsCovered} months
+                        </b>{" "}
+                        of expenses
+                        {" · "}Target:{" "}
+                        <b style={{ color: "var(--text)" }}>
+                          {ef.months} months
+                        </b>
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: "var(--textMuted)",
+                          letterSpacing: "0.07em",
+                          textTransform: "uppercase",
+                          fontFamily: "Plus Jakarta Sans,sans-serif",
+                          marginBottom: 6,
+                        }}
+                      >
+                        Recommended target
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 22,
+                          fontWeight: 700,
+                          color: "var(--amber)",
+                          fontFamily: "JetBrains Mono,monospace",
+                        }}
+                      >
+                        {fmtC(efRecommended, currency)}
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          color: "var(--textSub)",
+                          marginTop: 4,
+                          fontFamily: "Plus Jakarta Sans,sans-serif",
+                        }}
+                      >
+                        Based on avg monthly expenses
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Progress */}
+                  <div style={{ marginTop: 20 }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        marginBottom: 8,
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: 12,
+                          color: "var(--textSub)",
+                          fontFamily: "Plus Jakarta Sans,sans-serif",
+                        }}
+                      >
+                        Progress toward {ef.months}-month target
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color:
+                            efPct >= 100
+                              ? "var(--income)"
+                              : efPct >= 50
+                                ? "var(--amber)"
+                                : "var(--expense)",
+                          fontFamily: "JetBrains Mono,monospace",
+                        }}
+                      >
+                        {efPct.toFixed(0)}%
+                      </span>
+                    </div>
+                    <div
+                      style={{
+                        height: 10,
+                        background: "var(--card)",
+                        borderRadius: 5,
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: "100%",
+                          width: efPct + "%",
+                          background:
+                            efPct >= 100
+                              ? "linear-gradient(90deg,var(--income),#059669)"
+                              : efPct >= 50
+                                ? "linear-gradient(90deg,var(--amber),#d97706)"
+                                : "linear-gradient(90deg,var(--expense),#dc2626)",
+                          borderRadius: 5,
+                          transition: "width .8s ease",
+                        }}
+                      />
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "var(--textMuted)",
+                        marginTop: 6,
+                        fontFamily: "Plus Jakarta Sans,sans-serif",
+                      }}
+                    >
+                      {efPct >= 100
+                        ? "🎉 Fully funded! You're protected."
+                        : fmtC(efRecommended - ef.current, currency) +
+                          " more to reach your target"}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Stats row */}
+                <div
+                  className="g4"
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(4,1fr)",
+                    gap: 12,
+                    marginBottom: 18,
+                  }}
+                >
+                  <StatCard
+                    label="Months Covered"
+                    value={efMonthsCovered + "mo"}
+                    sub="current protection"
+                    accent="var(--income)"
+                    icon="🛡️"
+                  />
+                  <StatCard
+                    label="Monthly Expenses"
+                    value={fmtC(avgMonthlyExp, currency)}
+                    sub="avg based on records"
+                    accent="var(--expense)"
+                    icon="📊"
+                    delay="1"
+                  />
+                  <StatCard
+                    label="Target Months"
+                    value={ef.months + "mo"}
+                    sub="click to adjust"
+                    accent="var(--amber)"
+                    icon="🎯"
+                    delay="2"
+                  />
+                  <StatCard
+                    label="Amount Needed"
+                    value={fmtC(
+                      Math.max(0, efRecommended - ef.current),
+                      currency,
+                    )}
+                    sub="to reach target"
+                    accent="var(--accent)"
+                    icon="💰"
+                    delay="3"
+                  />
+                </div>
+
+                <div
+                  className="g2"
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 14,
+                  }}
+                >
+                  {/* Tips */}
+                  <Card className="fu1">
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: "var(--text)",
+                        marginBottom: 14,
+                      }}
+                    >
+                      💡 Why an Emergency Fund?
+                    </div>
+                    {[
+                      {
+                        icon: "🏥",
+                        text: "Medical emergencies — unexpected hospital bills",
+                      },
+                      {
+                        icon: "🚗",
+                        text: "Car repairs — breakdown or accident costs",
+                      },
+                      {
+                        icon: "💼",
+                        text: "Job loss — income gap while searching for work",
+                      },
+                      {
+                        icon: "🏠",
+                        text: "Home repairs — urgent maintenance issues",
+                      },
+                      {
+                        icon: "✈️",
+                        text: "Emergency travel — family situations",
+                      },
+                    ].map((t, i) => (
+                      <div
+                        key={i}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          padding: "9px 0",
+                          borderBottom: "1px solid var(--border)",
+                        }}
+                      >
+                        <span style={{ fontSize: 18 }}>{t.icon}</span>
+                        <span
+                          style={{
+                            fontSize: 13,
+                            color: "var(--textSub)",
+                            fontFamily: "Plus Jakarta Sans,sans-serif",
+                          }}
+                        >
+                          {t.text}
+                        </span>
+                      </div>
+                    ))}
+                    <div
+                      style={{
+                        marginTop: 14,
+                        padding: "11px 13px",
+                        background: "var(--accentBg)",
+                        borderRadius: 10,
+                        fontSize: 12,
+                        color: "var(--textSub)",
+                        fontFamily: "Plus Jakarta Sans,sans-serif",
+                      }}
+                    >
+                      <b style={{ color: "var(--accent)" }}>Rule of thumb:</b>{" "}
+                      Aim for 3–6 months of living expenses. 6+ months if you're
+                      self-employed.
+                    </div>
+                  </Card>
+
+                  {/* Set target + actions */}
+                  <Card className="fu2">
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: "var(--text)",
+                        marginBottom: 14,
+                      }}
+                    >
+                      ⚙️ Manage Fund
+                    </div>
+                    <div style={{ marginBottom: 18 }}>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: "var(--textMuted)",
+                          letterSpacing: "0.07em",
+                          textTransform: "uppercase",
+                          marginBottom: 8,
+                          fontFamily: "Plus Jakarta Sans,sans-serif",
+                        }}
+                      >
+                        Target (months of expenses)
+                      </div>
+                      {efTargetEdit ? (
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <Field
+                            value={efTargetVal}
+                            onChange={(e) => setEfTargetVal(e.target.value)}
+                            placeholder="e.g. 6"
+                            type="number"
+                          />
+                          <Btn
+                            size="sm"
+                            onClick={() => saveEfTarget(efTargetVal)}
+                          >
+                            Save
+                          </Btn>
+                          <Btn
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setEfTargetEdit(false)}
+                          >
+                            ✕
+                          </Btn>
+                        </div>
+                      ) : (
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: 22,
+                              fontWeight: 700,
+                              color: "var(--amber)",
+                              fontFamily: "JetBrains Mono,monospace",
+                            }}
+                          >
+                            {ef.months} months
+                          </span>
+                          <button
+                            onClick={() => {
+                              setEfTargetVal(String(ef.months));
+                              setEfTargetEdit(true);
+                            }}
+                            style={{
+                              background: "none",
+                              border: "1px solid var(--border)",
+                              borderRadius: 7,
+                              padding: "5px 10px",
+                              cursor: "pointer",
+                              fontSize: 12,
+                              color: "var(--textSub)",
+                              fontFamily: "Plus Jakarta Sans,sans-serif",
+                            }}
+                          >
+                            Change
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    <Btn full onClick={() => setEfModal(true)}>
+                      + Add / Withdraw
+                    </Btn>
+
+                    {/* Recent history */}
+                    {ef.history && ef.history.length > 0 && (
+                      <>
+                        <div
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            color: "var(--textMuted)",
+                            letterSpacing: "0.07em",
+                            textTransform: "uppercase",
+                            margin: "16px 0 8px",
+                            fontFamily: "Plus Jakarta Sans,sans-serif",
+                          }}
+                        >
+                          Recent Activity
+                        </div>
+                        {ef.history.slice(0, 8).map((h) => (
+                          <div
+                            key={h.id || h.date}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 8,
+                              padding: "8px 0",
+                              borderBottom: "1px solid var(--border)",
+                            }}
+                          >
+                            <span style={{ fontSize: 14 }}>
+                              {h.type === "add" ? "➕" : "➖"}
+                            </span>
+                            <div style={{ flex: 1 }}>
+                              <div
+                                style={{
+                                  fontSize: 12,
+                                  color: "var(--text)",
+                                  fontFamily: "Plus Jakarta Sans,sans-serif",
+                                }}
+                              >
+                                {h.note || "Contribution"}
+                              </div>
+                              <div
+                                style={{
+                                  fontSize: 10,
+                                  color: "var(--textMuted)",
+                                  fontFamily: "JetBrains Mono,monospace",
+                                }}
+                              >
+                                {h.date}
+                              </div>
+                            </div>
+                            <span
+                              style={{
+                                fontSize: 12,
+                                fontWeight: 600,
+                                color:
+                                  h.type === "add"
+                                    ? "var(--income)"
+                                    : "var(--expense)",
+                                fontFamily: "JetBrains Mono,monospace",
+                              }}
+                            >
+                              {h.type === "add" ? "+" : "-"}
+                              {fmtC(h.amount, currency)}
+                            </span>
+                            <IconBtn
+                              icon="✎"
+                              onClick={() => setEfEditEntry({ ...h })}
+                              hoverColor="var(--accent)"
+                              title="Edit"
+                            />
+                            <IconBtn
+                              icon="✕"
+                              onClick={() => deleteEfEntry(h.id)}
+                              hoverColor="var(--expense)"
+                              title="Delete"
+                            />
+                          </div>
+                        ))}
+                      </>
+                    )}
+                  </Card>
                 </div>
               </>
             )}
@@ -3786,7 +5093,6 @@ export default function App() {
                     })}
                   </Card>
                 </div>
-
                 <Card className="fu2" style={{ marginBottom: 14 }}>
                   <div
                     style={{
@@ -3826,7 +5132,7 @@ export default function App() {
                               (t.cat_id || t.catId) === b.cat_id,
                           )
                           .reduce((s, t) => s + t.amount, 0);
-                        const limit = b.limit_amount || b.limit || 0;
+                        const limit = b.limit_amount || 0;
                         const pct = limit
                           ? Math.min(100, (spent / limit) * 100)
                           : 0;
@@ -3922,7 +5228,6 @@ export default function App() {
                     </div>
                   )}
                 </Card>
-
                 <Card className="fu3">
                   <div
                     style={{
@@ -4075,6 +5380,50 @@ export default function App() {
             setModal(null);
           }}
           userId={user.id}
+        />
+      )}
+
+      {editItem?.type === "txn" && (
+        <EditTxnModal
+          onClose={() => setEditItem(null)}
+          txn={editItem.data}
+          cats={cats}
+          currency={currency}
+          onSave={(u) => setTxns((p) => p.map((x) => (x.id === u.id ? u : x)))}
+        />
+      )}
+      {editItem?.type === "bill" && (
+        <EditBillModal
+          onClose={() => setEditItem(null)}
+          bill={editItem.data}
+          cats={cats}
+          onSave={(u) => setBills((p) => p.map((x) => (x.id === u.id ? u : x)))}
+        />
+      )}
+      {editItem?.type === "recur" && (
+        <EditRecurModal
+          onClose={() => setEditItem(null)}
+          recur={editItem.data}
+          cats={cats}
+          onSave={(u) =>
+            setRecurring((p) => p.map((x) => (x.id === u.id ? u : x)))
+          }
+        />
+      )}
+
+      {efModal && (
+        <EFContribModal
+          onClose={() => setEfModal(false)}
+          onAdd={handleEfContrib}
+          cur={cur}
+        />
+      )}
+      {efEditEntry && (
+        <EFEditEntryModal
+          onClose={() => setEfEditEntry(null)}
+          entry={efEditEntry}
+          cur={cur}
+          onSave={(id, amt, note) => editEfEntry(id, amt, note)}
         />
       )}
     </div>
