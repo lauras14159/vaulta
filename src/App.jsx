@@ -2215,6 +2215,87 @@ function BudgetModal({ onClose, cats, budgets, onSave, userId }) {
   );
 }
 
+/* ── Reset Emergency Fund Button with confirm ── */
+function ResetEfBtn({ onReset }) {
+  const [confirm, setConfirm] = useState(false);
+  if (confirm)
+    return (
+      <div
+        style={{
+          background: "var(--expenseBg)",
+          border: "1px solid var(--expense)",
+          borderRadius: 10,
+          padding: "12px 14px",
+        }}
+      >
+        <div
+          style={{
+            fontSize: 13,
+            fontWeight: 600,
+            color: "var(--expense)",
+            fontFamily: "Plus Jakarta Sans,sans-serif",
+            marginBottom: 10,
+          }}
+        >
+          ⚠️ Reset everything to zero?
+        </div>
+        <div
+          style={{
+            fontSize: 12,
+            color: "var(--textSub)",
+            fontFamily: "Plus Jakarta Sans,sans-serif",
+            marginBottom: 12,
+          }}
+        >
+          This will clear your saved amount, target, and all activity history.
+          Cannot be undone.
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Btn variant="ghost" size="sm" onClick={() => setConfirm(false)}>
+            Cancel
+          </Btn>
+          <Btn
+            variant="danger"
+            size="sm"
+            onClick={() => {
+              onReset();
+              setConfirm(false);
+            }}
+          >
+            Yes, Reset Fund
+          </Btn>
+        </div>
+      </div>
+    );
+  return (
+    <button
+      onClick={() => setConfirm(true)}
+      style={{
+        background: "none",
+        border: "1px solid var(--border)",
+        borderRadius: 8,
+        padding: "7px 14px",
+        cursor: "pointer",
+        fontSize: 12,
+        color: "var(--textMuted)",
+        fontFamily: "Plus Jakarta Sans,sans-serif",
+        width: "100%",
+        transition: "all .2s",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.borderColor = "var(--expense)";
+        e.currentTarget.style.color = "var(--expense)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.borderColor = "var(--border)";
+        e.currentTarget.style.color = "var(--textMuted)";
+      }}
+    >
+      🔄 Reset Emergency Fund
+    </button>
+  );
+}
+
 /* ── Emergency Fund Add Contribution Modal ── */
 function EFContribModal({ onClose, onAdd, cur }) {
   const [amount, setAmount] = useState("");
@@ -2406,13 +2487,8 @@ export default function App() {
   const [bills, setBills] = useState([]);
   const [budgets, setBudgets] = useState([]);
 
-  // Emergency fund state
-  const [ef, setEf] = useState({
-    current: 0,
-    target: 0,
-    months: 6,
-    history: [],
-  });
+  // Emergency fund state — target is a dollar amount, current is what's saved
+  const [ef, setEf] = useState({ current: 0, target: 0, history: [] });
 
   const [currency, setCurrency] = useState("USD");
   const [modal, setModal] = useState(null);
@@ -2421,7 +2497,7 @@ export default function App() {
   const [ftype, setFtype] = useState("all");
   const [search, setSearch] = useState("");
   const [efModal, setEfModal] = useState(false);
-  const [efEditEntry, setEfEditEntry] = useState(null); // {id, amount, note}
+  const [efEditEntry, setEfEditEntry] = useState(null);
   const [efTargetEdit, setEfTargetEdit] = useState(false);
   const [efTargetVal, setEfTargetVal] = useState("");
 
@@ -2484,13 +2560,15 @@ export default function App() {
       // filter out emergency fund special goal
       const efGoal = goaR.data.find((g) => g.name === "__ef__");
       if (efGoal) {
+        // history stored in localStorage (deadline field is date type, can't store JSON)
         let hist = [];
         try {
-          if (efGoal.deadline) hist = JSON.parse(efGoal.deadline);
+          const raw = localStorage.getItem("va_ef_hist_" + userId);
+          if (raw) hist = JSON.parse(raw);
         } catch (e) {}
         setEf({
           current: efGoal.saved || 0,
-          months: efGoal.target || 6,
+          target: efGoal.target || 0,
           history: hist,
         });
       }
@@ -2531,12 +2609,9 @@ export default function App() {
     fontSize: 11,
   };
 
-  const avgMonthlyExp = totExp > 0 ? totExp / 4 : 0; // based on current data
-  const efMonthsCovered =
-    avgMonthlyExp > 0 ? (ef.current / avgMonthlyExp).toFixed(1) : 0;
-  const efRecommended = avgMonthlyExp * ef.months;
   const efPct =
-    efRecommended > 0 ? Math.min(100, (ef.current / efRecommended) * 100) : 0;
+    ef.target > 0 ? Math.min(100, (ef.current / ef.target) * 100) : 0;
+  const efNeeded = Math.max(0, ef.target - ef.current);
 
   const catExp = useMemo(() => {
     const m = {};
@@ -2608,14 +2683,11 @@ export default function App() {
     setBills((p) => p.filter((x) => x.id !== id));
   }
 
-  // Emergency fund helpers
-  async function handleEfContrib({ amount, type, note, date }) {
-    const newAmt =
-      type === "add" ? ef.current + amount : Math.max(0, ef.current - amount);
-    const entry = { id: uid(), amount, type, note, date };
-    const newHistory = [entry, ...(ef.history || [])].slice(0, 50);
-    setEf((p) => ({ ...p, current: newAmt, history: newHistory }));
-    const histJson = JSON.stringify(newHistory);
+  async function saveEfToSupabase(current, target, history) {
+    const histKey = "va_ef_hist_" + user.id;
+    try {
+      localStorage.setItem(histKey, JSON.stringify(history));
+    } catch (e) {}
     const existing = await supabase
       .from("goals")
       .select("id")
@@ -2625,7 +2697,7 @@ export default function App() {
     if (existing.data) {
       await supabase
         .from("goals")
-        .update({ saved: newAmt, target: ef.months, deadline: histJson })
+        .update({ saved: current, target })
         .eq("id", existing.data.id);
     } else {
       await supabase
@@ -2634,42 +2706,44 @@ export default function App() {
           user_id: user.id,
           name: "__ef__",
           emoji: "🛡️",
-          target: ef.months,
-          saved: newAmt,
-          deadline: histJson,
+          target,
+          saved: current,
+          deadline: null,
         });
     }
+  }
+
+  async function handleEfContrib({ amount, type, note, date }) {
+    const newAmt =
+      type === "add" ? ef.current + amount : Math.max(0, ef.current - amount);
+    const entry = { id: uid(), amount, type, note, date };
+    const newHist = [entry, ...(ef.history || [])].slice(0, 50);
+    setEf((p) => ({ ...p, current: newAmt, history: newHist }));
+    await saveEfToSupabase(newAmt, ef.target, newHist);
+  }
+
+  async function saveEfTarget(dollarAmt) {
+    const target = +dollarAmt || 0;
+    setEf((p) => ({ ...p, target }));
+    setEfTargetEdit(false);
+    await saveEfToSupabase(ef.current, target, ef.history || []);
   }
 
   async function deleteEfEntry(entryId) {
     const entry = ef.history.find((h) => h.id === entryId);
     if (!entry) return;
-    // reverse the amount
     const reversed =
       entry.type === "add"
         ? Math.max(0, ef.current - entry.amount)
         : ef.current + entry.amount;
-    const newHistory = ef.history.filter((h) => h.id !== entryId);
-    setEf((p) => ({ ...p, current: reversed, history: newHistory }));
-    const histJson = JSON.stringify(newHistory);
-    const existing = await supabase
-      .from("goals")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("name", "__ef__")
-      .single();
-    if (existing.data) {
-      await supabase
-        .from("goals")
-        .update({ saved: reversed, deadline: histJson })
-        .eq("id", existing.data.id);
-    }
+    const newHist = ef.history.filter((h) => h.id !== entryId);
+    setEf((p) => ({ ...p, current: reversed, history: newHist }));
+    await saveEfToSupabase(reversed, ef.target, newHist);
   }
 
   async function editEfEntry(entryId, newAmount, newNote) {
     const entry = ef.history.find((h) => h.id === entryId);
     if (!entry) return;
-    // reverse old, apply new
     const withoutOld =
       entry.type === "add"
         ? ef.current - entry.amount
@@ -2678,11 +2752,18 @@ export default function App() {
       entry.type === "add"
         ? withoutOld + newAmount
         : Math.max(0, withoutOld - newAmount);
-    const newHistory = ef.history.map((h) =>
+    const newHist = ef.history.map((h) =>
       h.id === entryId ? { ...h, amount: newAmount, note: newNote } : h,
     );
-    setEf((p) => ({ ...p, current: withNew, history: newHistory }));
-    const histJson = JSON.stringify(newHistory);
+    setEf((p) => ({ ...p, current: withNew, history: newHist }));
+    await saveEfToSupabase(withNew, ef.target, newHist);
+  }
+
+  async function resetEf() {
+    setEf({ current: 0, target: 0, history: [] });
+    try {
+      localStorage.removeItem("va_ef_hist_" + user.id);
+    } catch (e) {}
     const existing = await supabase
       .from("goals")
       .select("id")
@@ -2692,36 +2773,9 @@ export default function App() {
     if (existing.data) {
       await supabase
         .from("goals")
-        .update({ saved: withNew, deadline: histJson })
+        .update({ saved: 0, target: 0 })
         .eq("id", existing.data.id);
     }
-  }
-  async function saveEfTarget(months) {
-    setEf((p) => ({ ...p, months: +months || 6 }));
-    setEfTargetEdit(false);
-    const histJson = JSON.stringify(ef.history || []);
-    const existing = await supabase
-      .from("goals")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("name", "__ef__")
-      .single();
-    if (existing.data)
-      await supabase
-        .from("goals")
-        .update({ target: +months || 6, deadline: histJson })
-        .eq("id", existing.data.id);
-    else
-      await supabase
-        .from("goals")
-        .insert({
-          user_id: user.id,
-          name: "__ef__",
-          emoji: "🛡️",
-          target: +months || 6,
-          saved: ef.current,
-          deadline: histJson,
-        });
   }
 
   const upcomingBills = bills
@@ -4498,6 +4552,7 @@ export default function App() {
                         "linear-gradient(90deg,var(--gFrom),var(--gTo))",
                     }}
                   />
+
                   <div
                     style={{
                       display: "flex",
@@ -4505,6 +4560,7 @@ export default function App() {
                       alignItems: "flex-start",
                       flexWrap: "wrap",
                       gap: 16,
+                      marginBottom: 24,
                     }}
                   >
                     <div>
@@ -4519,11 +4575,11 @@ export default function App() {
                           marginBottom: 8,
                         }}
                       >
-                        Emergency Fund
+                        Currently Saved
                       </div>
                       <div
                         style={{
-                          fontSize: 36,
+                          fontSize: 38,
                           fontWeight: 800,
                           color: "var(--income)",
                           fontFamily: "JetBrains Mono,monospace",
@@ -4531,24 +4587,6 @@ export default function App() {
                         }}
                       >
                         {fmtC(ef.current, currency)}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 13,
-                          color: "var(--textSub)",
-                          marginTop: 6,
-                          fontFamily: "Plus Jakarta Sans,sans-serif",
-                        }}
-                      >
-                        Covers{" "}
-                        <b style={{ color: "var(--text)" }}>
-                          {efMonthsCovered} months
-                        </b>{" "}
-                        of expenses
-                        {" · "}Target:{" "}
-                        <b style={{ color: "var(--text)" }}>
-                          {ef.months} months
-                        </b>
                       </div>
                     </div>
                     <div style={{ textAlign: "right" }}>
@@ -4560,108 +4598,224 @@ export default function App() {
                           letterSpacing: "0.07em",
                           textTransform: "uppercase",
                           fontFamily: "Plus Jakarta Sans,sans-serif",
-                          marginBottom: 6,
+                          marginBottom: 8,
                         }}
                       >
-                        Recommended target
+                        Your Target
                       </div>
-                      <div
-                        style={{
-                          fontSize: 22,
-                          fontWeight: 700,
-                          color: "var(--amber)",
-                          fontFamily: "JetBrains Mono,monospace",
-                        }}
-                      >
-                        {fmtC(efRecommended, currency)}
-                      </div>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          color: "var(--textSub)",
-                          marginTop: 4,
-                          fontFamily: "Plus Jakarta Sans,sans-serif",
-                        }}
-                      >
-                        Based on avg monthly expenses
-                      </div>
+                      {efTargetEdit ? (
+                        <div
+                          style={{
+                            display: "flex",
+                            gap: 8,
+                            alignItems: "center",
+                            justifyContent: "flex-end",
+                          }}
+                        >
+                          <div style={{ width: 160 }}>
+                            <Field
+                              type="number"
+                              value={efTargetVal}
+                              onChange={(e) => setEfTargetVal(e.target.value)}
+                              placeholder="e.g. 10000"
+                              prefix={cur.sym}
+                            />
+                          </div>
+                          <Btn
+                            size="sm"
+                            onClick={() => saveEfTarget(efTargetVal)}
+                          >
+                            Save
+                          </Btn>
+                          <Btn
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setEfTargetEdit(false)}
+                          >
+                            ✕
+                          </Btn>
+                        </div>
+                      ) : (
+                        <div
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            justifyContent: "flex-end",
+                          }}
+                        >
+                          <div
+                            style={{
+                              fontSize: 28,
+                              fontWeight: 700,
+                              color: "var(--amber)",
+                              fontFamily: "JetBrains Mono,monospace",
+                            }}
+                          >
+                            {ef.target > 0 ? (
+                              fmtC(ef.target, currency)
+                            ) : (
+                              <span
+                                style={{
+                                  fontSize: 16,
+                                  color: "var(--textMuted)",
+                                }}
+                              >
+                                Not set yet
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => {
+                              setEfTargetVal(String(ef.target || ""));
+                              setEfTargetEdit(true);
+                            }}
+                            style={{
+                              background:
+                                "linear-gradient(135deg,var(--gFrom),var(--gTo))",
+                              border: "none",
+                              borderRadius: 7,
+                              padding: "6px 14px",
+                              cursor: "pointer",
+                              fontSize: 12,
+                              fontWeight: 600,
+                              color: "#fff",
+                              fontFamily: "Plus Jakarta Sans,sans-serif",
+                              whiteSpace: "nowrap",
+                              boxShadow: "0 2px 8px rgba(99,102,241,.3)",
+                            }}
+                          >
+                            {ef.target > 0 ? "✎ Change" : "+ Set Target"}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
 
-                  {/* Progress */}
-                  <div style={{ marginTop: 20 }}>
+                  {/* Progress bar */}
+                  {ef.target > 0 ? (
+                    <>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          marginBottom: 8,
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: 12,
+                            color: "var(--textSub)",
+                            fontFamily: "Plus Jakarta Sans,sans-serif",
+                          }}
+                        >
+                          {efPct >= 100
+                            ? "🎉 Fully funded!"
+                            : fmtC(efNeeded, currency) + " still needed"}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 13,
+                            fontWeight: 700,
+                            color:
+                              efPct >= 100
+                                ? "var(--income)"
+                                : efPct >= 50
+                                  ? "var(--amber)"
+                                  : "var(--expense)",
+                            fontFamily: "JetBrains Mono,monospace",
+                          }}
+                        >
+                          {efPct.toFixed(0)}%
+                        </span>
+                      </div>
+                      <div
+                        style={{
+                          height: 12,
+                          background: "var(--card)",
+                          borderRadius: 6,
+                          overflow: "hidden",
+                        }}
+                      >
+                        <div
+                          style={{
+                            height: "100%",
+                            width: efPct + "%",
+                            borderRadius: 6,
+                            transition: "width .8s ease",
+                            background:
+                              efPct >= 100
+                                ? "linear-gradient(90deg,var(--income),#059669)"
+                                : efPct >= 50
+                                  ? "linear-gradient(90deg,var(--amber),#d97706)"
+                                  : "linear-gradient(90deg,var(--expense),#dc2626)",
+                          }}
+                        />
+                      </div>
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          marginTop: 6,
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: "var(--textMuted)",
+                            fontFamily: "JetBrains Mono,monospace",
+                          }}
+                        >
+                          {cur.sym}0
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            color: "var(--textMuted)",
+                            fontFamily: "JetBrains Mono,monospace",
+                          }}
+                        >
+                          {fmtC(ef.target, currency)}
+                        </span>
+                      </div>
+                    </>
+                  ) : (
                     <div
                       style={{
+                        background: "var(--card)",
+                        borderRadius: 12,
+                        padding: "16px 20px",
                         display: "flex",
-                        justifyContent: "space-between",
-                        marginBottom: 8,
+                        alignItems: "center",
+                        gap: 12,
                       }}
                     >
+                      <span style={{ fontSize: 22 }}>👆</span>
                       <span
                         style={{
-                          fontSize: 12,
+                          flex: 1,
+                          fontSize: 13,
                           color: "var(--textSub)",
                           fontFamily: "Plus Jakarta Sans,sans-serif",
                         }}
                       >
-                        Progress toward {ef.months}-month target
+                        Set a target amount to see your progress bar
                       </span>
-                      <span
-                        style={{
-                          fontSize: 12,
-                          fontWeight: 700,
-                          color:
-                            efPct >= 100
-                              ? "var(--income)"
-                              : efPct >= 50
-                                ? "var(--amber)"
-                                : "var(--expense)",
-                          fontFamily: "JetBrains Mono,monospace",
+                      <Btn
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setEfTargetVal("");
+                          setEfTargetEdit(true);
                         }}
                       >
-                        {efPct.toFixed(0)}%
-                      </span>
+                        Set Target
+                      </Btn>
                     </div>
-                    <div
-                      style={{
-                        height: 10,
-                        background: "var(--card)",
-                        borderRadius: 5,
-                        overflow: "hidden",
-                      }}
-                    >
-                      <div
-                        style={{
-                          height: "100%",
-                          width: efPct + "%",
-                          background:
-                            efPct >= 100
-                              ? "linear-gradient(90deg,var(--income),#059669)"
-                              : efPct >= 50
-                                ? "linear-gradient(90deg,var(--amber),#d97706)"
-                                : "linear-gradient(90deg,var(--expense),#dc2626)",
-                          borderRadius: 5,
-                          transition: "width .8s ease",
-                        }}
-                      />
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: "var(--textMuted)",
-                        marginTop: 6,
-                        fontFamily: "Plus Jakarta Sans,sans-serif",
-                      }}
-                    >
-                      {efPct >= 100
-                        ? "🎉 Fully funded! You're protected."
-                        : fmtC(efRecommended - ef.current, currency) +
-                          " more to reach your target"}
-                    </div>
-                  </div>
+                  )}
                 </div>
 
-                {/* Stats row */}
+                {/* Stats */}
                 <div
                   className="g4"
                   style={{
@@ -4672,37 +4826,40 @@ export default function App() {
                   }}
                 >
                   <StatCard
-                    label="Months Covered"
-                    value={efMonthsCovered + "mo"}
-                    sub="current protection"
+                    label="Saved"
+                    value={fmtC(ef.current, currency)}
+                    sub="in your fund"
                     accent="var(--income)"
                     icon="🛡️"
                   />
                   <StatCard
-                    label="Monthly Expenses"
-                    value={fmtC(avgMonthlyExp, currency)}
-                    sub="avg based on records"
-                    accent="var(--expense)"
-                    icon="📊"
+                    label="Target"
+                    value={ef.target > 0 ? fmtC(ef.target, currency) : "—"}
+                    sub="your goal amount"
+                    accent="var(--amber)"
+                    icon="🎯"
                     delay="1"
                   />
                   <StatCard
-                    label="Target Months"
-                    value={ef.months + "mo"}
-                    sub="click to adjust"
-                    accent="var(--amber)"
-                    icon="🎯"
-                    delay="2"
-                  />
-                  <StatCard
-                    label="Amount Needed"
-                    value={fmtC(
-                      Math.max(0, efRecommended - ef.current),
-                      currency,
-                    )}
+                    label="Still Needed"
+                    value={ef.target > 0 ? fmtC(efNeeded, currency) : "—"}
                     sub="to reach target"
                     accent="var(--accent)"
                     icon="💰"
+                    delay="2"
+                  />
+                  <StatCard
+                    label="Progress"
+                    value={ef.target > 0 ? efPct.toFixed(0) + "%" : "—"}
+                    sub={efPct >= 100 ? "Fully funded! 🎉" : "keep going"}
+                    accent={
+                      efPct >= 100
+                        ? "var(--income)"
+                        : efPct >= 50
+                          ? "var(--amber)"
+                          : "var(--expense)"
+                    }
+                    icon="📊"
                     delay="3"
                   />
                 </div>
@@ -4715,7 +4872,7 @@ export default function App() {
                     gap: 14,
                   }}
                 >
-                  {/* Tips */}
+                  {/* Why */}
                   <Card className="fu1">
                     <div
                       style={{
@@ -4771,116 +4928,28 @@ export default function App() {
                         </span>
                       </div>
                     ))}
-                    <div
-                      style={{
-                        marginTop: 14,
-                        padding: "11px 13px",
-                        background: "var(--accentBg)",
-                        borderRadius: 10,
-                        fontSize: 12,
-                        color: "var(--textSub)",
-                        fontFamily: "Plus Jakarta Sans,sans-serif",
-                      }}
-                    >
-                      <b style={{ color: "var(--accent)" }}>Rule of thumb:</b>{" "}
-                      Aim for 3–6 months of living expenses. 6+ months if you're
-                      self-employed.
-                    </div>
                   </Card>
 
-                  {/* Set target + actions */}
+                  {/* Manage */}
                   <Card className="fu2">
                     <div
                       style={{
                         fontSize: 14,
                         fontWeight: 700,
                         color: "var(--text)",
-                        marginBottom: 14,
+                        marginBottom: 16,
                       }}
                     >
                       ⚙️ Manage Fund
                     </div>
-                    <div style={{ marginBottom: 18 }}>
-                      <div
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          color: "var(--textMuted)",
-                          letterSpacing: "0.07em",
-                          textTransform: "uppercase",
-                          marginBottom: 8,
-                          fontFamily: "Plus Jakarta Sans,sans-serif",
-                        }}
-                      >
-                        Target (months of expenses)
-                      </div>
-                      {efTargetEdit ? (
-                        <div style={{ display: "flex", gap: 8 }}>
-                          <Field
-                            value={efTargetVal}
-                            onChange={(e) => setEfTargetVal(e.target.value)}
-                            placeholder="e.g. 6"
-                            type="number"
-                          />
-                          <Btn
-                            size="sm"
-                            onClick={() => saveEfTarget(efTargetVal)}
-                          >
-                            Save
-                          </Btn>
-                          <Btn
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => setEfTargetEdit(false)}
-                          >
-                            ✕
-                          </Btn>
-                        </div>
-                      ) : (
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 10,
-                          }}
-                        >
-                          <span
-                            style={{
-                              fontSize: 22,
-                              fontWeight: 700,
-                              color: "var(--amber)",
-                              fontFamily: "JetBrains Mono,monospace",
-                            }}
-                          >
-                            {ef.months} months
-                          </span>
-                          <button
-                            onClick={() => {
-                              setEfTargetVal(String(ef.months));
-                              setEfTargetEdit(true);
-                            }}
-                            style={{
-                              background: "none",
-                              border: "1px solid var(--border)",
-                              borderRadius: 7,
-                              padding: "5px 10px",
-                              cursor: "pointer",
-                              fontSize: 12,
-                              color: "var(--textSub)",
-                              fontFamily: "Plus Jakarta Sans,sans-serif",
-                            }}
-                          >
-                            Change
-                          </button>
-                        </div>
-                      )}
-                    </div>
-
                     <Btn full onClick={() => setEfModal(true)}>
                       + Add / Withdraw
                     </Btn>
 
-                    {/* Recent history */}
+                    <div style={{ marginTop: 16 }}>
+                      <ResetEfBtn onReset={resetEf} />
+                    </div>
+
                     {ef.history && ef.history.length > 0 && (
                       <>
                         <div
@@ -4894,71 +4963,91 @@ export default function App() {
                             fontFamily: "Plus Jakarta Sans,sans-serif",
                           }}
                         >
-                          Recent Activity
+                          Activity History
                         </div>
-                        {ef.history.slice(0, 8).map((h) => (
-                          <div
-                            key={h.id || h.date}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 8,
-                              padding: "8px 0",
-                              borderBottom: "1px solid var(--border)",
-                            }}
-                          >
-                            <span style={{ fontSize: 14 }}>
-                              {h.type === "add" ? "➕" : "➖"}
-                            </span>
-                            <div style={{ flex: 1 }}>
-                              <div
-                                style={{
-                                  fontSize: 12,
-                                  color: "var(--text)",
-                                  fontFamily: "Plus Jakarta Sans,sans-serif",
-                                }}
-                              >
-                                {h.note || "Contribution"}
-                              </div>
-                              <div
-                                style={{
-                                  fontSize: 10,
-                                  color: "var(--textMuted)",
-                                  fontFamily: "JetBrains Mono,monospace",
-                                }}
-                              >
-                                {h.date}
-                              </div>
-                            </div>
-                            <span
+                        <div style={{ maxHeight: 260, overflowY: "auto" }}>
+                          {ef.history.map((h) => (
+                            <div
+                              key={h.id}
                               style={{
-                                fontSize: 12,
-                                fontWeight: 600,
-                                color:
-                                  h.type === "add"
-                                    ? "var(--income)"
-                                    : "var(--expense)",
-                                fontFamily: "JetBrains Mono,monospace",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 8,
+                                padding: "8px 0",
+                                borderBottom: "1px solid var(--border)",
                               }}
                             >
-                              {h.type === "add" ? "+" : "-"}
-                              {fmtC(h.amount, currency)}
-                            </span>
-                            <IconBtn
-                              icon="✎"
-                              onClick={() => setEfEditEntry({ ...h })}
-                              hoverColor="var(--accent)"
-                              title="Edit"
-                            />
-                            <IconBtn
-                              icon="✕"
-                              onClick={() => deleteEfEntry(h.id)}
-                              hoverColor="var(--expense)"
-                              title="Delete"
-                            />
-                          </div>
-                        ))}
+                              <span style={{ fontSize: 14, flexShrink: 0 }}>
+                                {h.type === "add" ? "➕" : "➖"}
+                              </span>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div
+                                  style={{
+                                    fontSize: 12,
+                                    color: "var(--text)",
+                                    fontFamily: "Plus Jakarta Sans,sans-serif",
+                                    whiteSpace: "nowrap",
+                                    overflow: "hidden",
+                                    textOverflow: "ellipsis",
+                                  }}
+                                >
+                                  {h.note || "Contribution"}
+                                </div>
+                                <div
+                                  style={{
+                                    fontSize: 10,
+                                    color: "var(--textMuted)",
+                                    fontFamily: "JetBrains Mono,monospace",
+                                  }}
+                                >
+                                  {h.date}
+                                </div>
+                              </div>
+                              <span
+                                style={{
+                                  fontSize: 12,
+                                  fontWeight: 600,
+                                  color:
+                                    h.type === "add"
+                                      ? "var(--income)"
+                                      : "var(--expense)",
+                                  fontFamily: "JetBrains Mono,monospace",
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {h.type === "add" ? "+" : "-"}
+                                {fmtC(h.amount, currency)}
+                              </span>
+                              <IconBtn
+                                icon="✎"
+                                onClick={() => setEfEditEntry({ ...h })}
+                                hoverColor="var(--accent)"
+                                title="Edit"
+                              />
+                              <IconBtn
+                                icon="✕"
+                                onClick={() => deleteEfEntry(h.id)}
+                                hoverColor="var(--expense)"
+                                title="Delete"
+                              />
+                            </div>
+                          ))}
+                        </div>
                       </>
+                    )}
+
+                    {(!ef.history || ef.history.length === 0) && (
+                      <div
+                        style={{
+                          textAlign: "center",
+                          padding: "24px 0",
+                          color: "var(--textMuted)",
+                          fontSize: 13,
+                          fontFamily: "Plus Jakarta Sans,sans-serif",
+                        }}
+                      >
+                        No activity yet — add your first contribution!
+                      </div>
                     )}
                   </Card>
                 </div>
