@@ -1608,17 +1608,15 @@ function WalletModal({ onClose, wallet, onSave, userId }) {
 
   async function save() {
     setLoading(true);
-    await supabase
-      .from("wallet")
-      .upsert(
-        {
-          user_id: userId,
-          cash: +cash || 0,
-          bank: +bank || 0,
-          savings: +sav || 0,
-        },
-        { onConflict: "user_id" },
-      );
+    await supabase.from("wallet").upsert(
+      {
+        user_id: userId,
+        cash: +cash || 0,
+        bank: +bank || 0,
+        savings: +sav || 0,
+      },
+      { onConflict: "user_id" },
+    );
     onSave({ cash: +cash || 0, bank: +bank || 0, savings: +sav || 0 });
     setLoading(false);
     onClose();
@@ -2448,6 +2446,539 @@ function EFEditEntryModal({ onClose, entry, onSave, cur }) {
   );
 }
 
+/* ── Debt Card ── */
+function DebtCard({ d, currency, onEdit, onDelete, onPay }) {
+  const remaining = d.total_amount - (d.paid_amount || 0);
+  const pct =
+    d.total_amount > 0
+      ? Math.min(100, ((d.paid_amount || 0) / d.total_amount) * 100)
+      : 0;
+  const daysLeft = d.due_date ? daysUntil(d.due_date) : null;
+  const overdue = daysLeft !== null && daysLeft < 0;
+  const isIOwe = d.direction === "i_owe";
+  return (
+    <div
+      style={{
+        background: "var(--panel)",
+        border: `1px solid ${overdue ? "var(--expense)" : "var(--border)"}`,
+        borderRadius: 14,
+        padding: "16px 18px",
+        boxShadow: "0 2px 8px var(--shadow)",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 12,
+          marginBottom: 12,
+        }}
+      >
+        <div
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: 10,
+            background: isIOwe ? "var(--expenseBg)" : "var(--incomeBg)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            fontSize: 20,
+            flexShrink: 0,
+          }}
+        >
+          {isIOwe ? "💸" : "🤝"}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div
+            style={{
+              fontSize: 14,
+              fontWeight: 700,
+              color: "var(--text)",
+              fontFamily: "Plus Jakarta Sans,sans-serif",
+            }}
+          >
+            {d.name}
+          </div>
+          {d.note && (
+            <div
+              style={{
+                fontSize: 12,
+                color: "var(--textSub)",
+                fontFamily: "Plus Jakarta Sans,sans-serif",
+                marginTop: 2,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
+              {d.note}
+            </div>
+          )}
+          <div
+            style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}
+          >
+            {d.due_date && (
+              <Tag
+                color={
+                  overdue
+                    ? "var(--expense)"
+                    : daysLeft <= 7
+                      ? "var(--amber)"
+                      : "var(--textSub)"
+                }
+              >
+                {overdue
+                  ? `${Math.abs(daysLeft)}d overdue`
+                  : daysLeft === 0
+                    ? "Due today"
+                    : `Due in ${daysLeft}d`}
+              </Tag>
+            )}
+            <Tag color={isIOwe ? "var(--expense)" : "var(--income)"}>
+              {isIOwe ? "I owe" : "Owed to me"}
+            </Tag>
+          </div>
+        </div>
+        <div style={{ textAlign: "right", flexShrink: 0 }}>
+          <div
+            style={{
+              fontSize: 18,
+              fontWeight: 700,
+              color: isIOwe ? "var(--expense)" : "var(--income)",
+              fontFamily: "JetBrains Mono,monospace",
+            }}
+          >
+            {fmtC(remaining, d.currency)}
+          </div>
+          <div
+            style={{
+              fontSize: 11,
+              color: "var(--textMuted)",
+              fontFamily: "JetBrains Mono,monospace",
+              marginTop: 2,
+            }}
+          >
+            of {fmtC(d.total_amount, d.currency)}
+          </div>
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div style={{ marginBottom: 12 }}>
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            marginBottom: 5,
+          }}
+        >
+          <span
+            style={{
+              fontSize: 11,
+              color: "var(--textSub)",
+              fontFamily: "Plus Jakarta Sans,sans-serif",
+            }}
+          >
+            {isIOwe ? "Paid" : "Received"}:{" "}
+            {fmtC(d.paid_amount || 0, d.currency)}
+          </span>
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              fontFamily: "JetBrains Mono,monospace",
+              color:
+                pct >= 100
+                  ? "var(--income)"
+                  : isIOwe
+                    ? "var(--expense)"
+                    : "var(--income)",
+            }}
+          >
+            {pct.toFixed(0)}%
+          </span>
+        </div>
+        <div
+          style={{
+            height: 7,
+            background: "var(--card)",
+            borderRadius: 4,
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              height: "100%",
+              width: pct + "%",
+              borderRadius: 4,
+              transition: "width .6s ease",
+              background: isIOwe
+                ? "linear-gradient(90deg,var(--expense),#dc2626)"
+                : "linear-gradient(90deg,var(--income),#059669)",
+            }}
+          />
+        </div>
+      </div>
+
+      {/* Action buttons */}
+      <div
+        style={{
+          display: "flex",
+          gap: 8,
+          justifyContent: "flex-end",
+          alignItems: "center",
+        }}
+      >
+        <IconBtn
+          icon="✎"
+          onClick={onEdit}
+          hoverColor="var(--accent)"
+          title="Edit"
+        />
+        <IconBtn
+          icon="✕"
+          onClick={onDelete}
+          hoverColor="var(--expense)"
+          title="Delete"
+        />
+        <Btn size="sm" variant={isIOwe ? "danger" : "success"} onClick={onPay}>
+          {isIOwe ? "💸 Pay" : "🤝 Received"}
+        </Btn>
+      </div>
+    </div>
+  );
+}
+
+/* ── Add Debt Modal ── */
+function AddDebtModal({ onClose, onAdd, currency }) {
+  const [direction, setDirection] = useState("i_owe"); // i_owe | they_owe
+  const [name, setName] = useState("");
+  const [total, setTotal] = useState("");
+  const [paid, setPaid] = useState("");
+  const [note, setNote] = useState("");
+  const [due, setDue] = useState("");
+  const [cur, setCur] = useState(currency);
+  const [loading, setLoading] = useState(false);
+
+  async function submit() {
+    if (!name || !total || +total <= 0) return;
+    setLoading(true);
+    await onAdd({
+      id: uid(),
+      direction,
+      name: name.trim(),
+      total_amount: +total,
+      paid_amount: +paid || 0,
+      note,
+      due_date: due || null,
+      currency: cur,
+      settled: +paid >= +total,
+      created_at: new Date().toISOString(),
+    });
+    setLoading(false);
+    onClose();
+  }
+
+  return (
+    <Modal onClose={onClose} width={420}>
+      <MH title="💸 Add Debt" onClose={onClose} />
+      {/* Direction toggle */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        {[
+          { v: "i_owe", l: "💸 I Owe", sub: "money I owe someone" },
+          { v: "they_owe", l: "🤝 They Owe Me", sub: "money someone owes me" },
+        ].map((t) => (
+          <button
+            key={t.v}
+            onClick={() => setDirection(t.v)}
+            style={{
+              flex: 1,
+              padding: "10px 8px",
+              borderRadius: 10,
+              border: "2px solid",
+              cursor: "pointer",
+              fontFamily: "Plus Jakarta Sans,sans-serif",
+              fontSize: 12,
+              fontWeight: 600,
+              transition: "all .2s",
+              textAlign: "center",
+              borderColor:
+                direction === t.v ? "var(--accent)" : "var(--border)",
+              background: direction === t.v ? "var(--accentBg)" : "transparent",
+              color: direction === t.v ? "var(--accent)" : "var(--textSub)",
+            }}
+          >
+            <div>{t.l}</div>
+            <div
+              style={{
+                fontSize: 10,
+                fontWeight: 400,
+                marginTop: 2,
+                opacity: 0.7,
+              }}
+            >
+              {t.sub}
+            </div>
+          </button>
+        ))}
+      </div>
+      <Field
+        label="Person / Lender name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder={
+          direction === "i_owe"
+            ? "e.g. Bank, Friend Name"
+            : "e.g. John, Client Name"
+        }
+      />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <Field
+          label="Total Amount"
+          type="number"
+          value={total}
+          onChange={(e) => setTotal(e.target.value)}
+          placeholder="0.00"
+          prefix={getCur(cur).sym}
+        />
+        <Sel
+          label="Currency"
+          value={cur}
+          onChange={(e) => setCur(e.target.value)}
+          options={CURRENCIES.map((c) => ({
+            value: c.code,
+            label: c.sym + " " + c.code,
+          }))}
+        />
+      </div>
+      <Field
+        label="Already Paid / Received"
+        type="number"
+        value={paid}
+        onChange={(e) => setPaid(e.target.value)}
+        placeholder="0.00"
+        prefix={getCur(cur).sym}
+      />
+      <Field
+        label="Note (optional)"
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="e.g. Car loan, borrowed for rent"
+      />
+      <Field
+        label="Due Date (optional)"
+        type="date"
+        value={due}
+        onChange={(e) => setDue(e.target.value)}
+      />
+      <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+        <Btn variant="outline" full onClick={onClose}>
+          Cancel
+        </Btn>
+        <Btn full onClick={submit} loading={loading}>
+          Add Debt
+        </Btn>
+      </div>
+    </Modal>
+  );
+}
+
+/* ── Edit Debt Modal ── */
+function EditDebtModal({ onClose, onSave, debt }) {
+  const [name, setName] = useState(debt.name || "");
+  const [total, setTotal] = useState(String(debt.total_amount));
+  const [paid, setPaid] = useState(String(debt.paid_amount || 0));
+  const [note, setNote] = useState(debt.note || "");
+  const [due, setDue] = useState(debt.due_date || "");
+  const [cur, setCur] = useState(debt.currency || "USD");
+  const [loading, setLoading] = useState(false);
+
+  async function save() {
+    setLoading(true);
+    const totalN = +total || 0;
+    const paidN = Math.min(+paid || 0, totalN);
+    await onSave(debt.id, {
+      name: name.trim(),
+      total_amount: totalN,
+      paid_amount: paidN,
+      note,
+      due_date: due || null,
+      currency: cur,
+      settled: paidN >= totalN,
+    });
+    setLoading(false);
+    onClose();
+  }
+
+  return (
+    <Modal onClose={onClose} width={420}>
+      <MH title="Edit Debt" onClose={onClose} />
+      <div
+        style={{
+          marginBottom: 12,
+          padding: "8px 12px",
+          background: "var(--card)",
+          borderRadius: 9,
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <span style={{ fontSize: 16 }}>
+          {debt.direction === "i_owe" ? "💸" : "🤝"}
+        </span>
+        <span
+          style={{
+            fontSize: 12,
+            color: "var(--textSub)",
+            fontFamily: "Plus Jakarta Sans,sans-serif",
+          }}
+        >
+          {debt.direction === "i_owe" ? "You owe this" : "They owe you"}
+        </span>
+      </div>
+      <Field
+        label="Person / Name"
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder="Name"
+      />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <Field
+          label="Total Amount"
+          type="number"
+          value={total}
+          onChange={(e) => setTotal(e.target.value)}
+          placeholder="0.00"
+          prefix={getCur(cur).sym}
+        />
+        <Sel
+          label="Currency"
+          value={cur}
+          onChange={(e) => setCur(e.target.value)}
+          options={CURRENCIES.map((c) => ({
+            value: c.code,
+            label: c.sym + " " + c.code,
+          }))}
+        />
+      </div>
+      <Field
+        label="Paid / Received So Far"
+        type="number"
+        value={paid}
+        onChange={(e) => setPaid(e.target.value)}
+        placeholder="0.00"
+        prefix={getCur(cur).sym}
+      />
+      <Field
+        label="Note"
+        value={note}
+        onChange={(e) => setNote(e.target.value)}
+        placeholder="What is this for?"
+      />
+      <Field
+        label="Due Date"
+        type="date"
+        value={due}
+        onChange={(e) => setDue(e.target.value)}
+      />
+      <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+        <Btn variant="outline" full onClick={onClose}>
+          Cancel
+        </Btn>
+        <Btn full onClick={save} loading={loading}>
+          Save Changes
+        </Btn>
+      </div>
+    </Modal>
+  );
+}
+
+/* ── Add Payment Modal ── */
+function AddPaymentModal({ onClose, onAdd, debt, cur }) {
+  const [amount, setAmount] = useState("");
+  const remaining = debt.total_amount - (debt.paid_amount || 0);
+  return (
+    <Modal onClose={onClose} width={340}>
+      <MH
+        title={
+          debt.direction === "i_owe" ? "💸 Record Payment" : "🤝 Record Receipt"
+        }
+        onClose={onClose}
+      />
+      <div
+        style={{
+          background: "var(--card)",
+          borderRadius: 10,
+          padding: "10px 14px",
+          marginBottom: 14,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 12,
+            color: "var(--textSub)",
+            fontFamily: "Plus Jakarta Sans,sans-serif",
+            marginBottom: 4,
+          }}
+        >
+          {debt.name}
+        </div>
+        <div
+          style={{
+            fontSize: 13,
+            color: "var(--text)",
+            fontFamily: "JetBrains Mono,monospace",
+          }}
+        >
+          Remaining:{" "}
+          <b style={{ color: "var(--expense)" }}>
+            {cur.sym}
+            {Math.abs(remaining).toLocaleString("en-US", {
+              minimumFractionDigits: 2,
+            })}
+          </b>
+        </div>
+      </div>
+      <Field
+        label="Amount"
+        type="number"
+        value={amount}
+        onChange={(e) => setAmount(e.target.value)}
+        placeholder="0.00"
+        prefix={cur.sym}
+      />
+      <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+        <Btn
+          variant="ghost"
+          size="sm"
+          full
+          onClick={() => setAmount(String(remaining))}
+        >
+          Pay Full
+        </Btn>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+        <Btn variant="outline" full onClick={onClose}>
+          Cancel
+        </Btn>
+        <Btn
+          full
+          onClick={() => {
+            if (amount && +amount > 0) {
+              onAdd(debt.id, +amount);
+              onClose();
+            }
+          }}
+        >
+          Confirm
+        </Btn>
+      </div>
+    </Modal>
+  );
+}
+
 /* ── CSV Export ── */
 function exportCSV(txns, cats) {
   const header = "Date,Type,Category,Amount,Currency,Note";
@@ -2486,6 +3017,7 @@ export default function App() {
   const [recurring, setRecurring] = useState([]);
   const [bills, setBills] = useState([]);
   const [budgets, setBudgets] = useState([]);
+  const [debts, setDebts] = useState([]);
 
   // Emergency fund state — target is a dollar amount, current is what's saved
   const [ef, setEf] = useState({ current: 0, target: 0, history: [] });
@@ -2500,6 +3032,8 @@ export default function App() {
   const [efEditEntry, setEfEditEntry] = useState(null);
   const [efTargetEdit, setEfTargetEdit] = useState(false);
   const [efTargetVal, setEfTargetVal] = useState("");
+  const [editDebt, setEditDebt] = useState(null);
+  const [paymentDebt, setPaymentDebt] = useState(null);
 
   useEffect(() => {
     applyTheme(dark ? DARK : LIGHT);
@@ -2531,7 +3065,7 @@ export default function App() {
 
   const loadData = useCallback(async (userId) => {
     setDataLoading(true);
-    const [txR, catR, walR, goaR, recR, bilR, budR] = await Promise.all([
+    const [txR, catR, walR, goaR, recR, bilR, budR, debR] = await Promise.all([
       supabase
         .from("transactions")
         .select("*")
@@ -2547,6 +3081,11 @@ export default function App() {
         .eq("user_id", userId)
         .order("due_date"),
       supabase.from("budgets").select("*").eq("user_id", userId),
+      supabase
+        .from("debts")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false }),
     ]);
     if (txR.data) setTxns(txR.data);
     if (catR.data && catR.data.length > 0) setCats([...DEF_CATS, ...catR.data]);
@@ -2577,6 +3116,7 @@ export default function App() {
     if (recR.data) setRecurring(recR.data);
     if (bilR.data) setBills(bilR.data);
     if (budR.data) setBudgets(budR.data);
+    if (debR.data) setDebts(debR.data);
     setDataLoading(false);
   }, []);
 
@@ -2654,6 +3194,7 @@ export default function App() {
     setRecurring([]);
     setBills([]);
     setBudgets([]);
+    setDebts([]);
     setCats(DEF_CATS);
     setWallet({ cash: 0, bank: 0, savings: 0 });
   }
@@ -2700,16 +3241,14 @@ export default function App() {
         .update({ saved: current, target })
         .eq("id", existing.data.id);
     } else {
-      await supabase
-        .from("goals")
-        .insert({
-          user_id: user.id,
-          name: "__ef__",
-          emoji: "🛡️",
-          target,
-          saved: current,
-          deadline: null,
-        });
+      await supabase.from("goals").insert({
+        user_id: user.id,
+        name: "__ef__",
+        emoji: "🛡️",
+        target,
+        saved: current,
+        deadline: null,
+      });
     }
   }
 
@@ -2778,6 +3317,38 @@ export default function App() {
     }
   }
 
+  async function addDebt(d) {
+    const { data } = await supabase
+      .from("debts")
+      .insert({ ...d, user_id: user.id })
+      .select()
+      .single();
+    if (data) setDebts((p) => [data, ...p]);
+  }
+  async function updateDebt(id, updates) {
+    const { data } = await supabase
+      .from("debts")
+      .update(updates)
+      .eq("id", id)
+      .select()
+      .single();
+    if (data) setDebts((p) => p.map((x) => (x.id === id ? data : x)));
+  }
+  async function deleteDebt(id) {
+    await supabase.from("debts").delete().eq("id", id);
+    setDebts((p) => p.filter((x) => x.id !== id));
+  }
+  async function addDebtPayment(debtId, amount) {
+    const debt = debts.find((d) => d.id === debtId);
+    if (!debt) return;
+    const newPaid = Math.min(
+      debt.total_amount,
+      (debt.paid_amount || 0) + amount,
+    );
+    const settled = newPaid >= debt.total_amount;
+    await updateDebt(debtId, { paid_amount: newPaid, settled });
+  }
+
   const upcomingBills = bills
     .filter((b) => !b.paid)
     .sort((a, b) => new Date(a.due_date) - new Date(b.due_date));
@@ -2789,18 +3360,27 @@ export default function App() {
       .reduce((s, t) => s + t.amount, 0);
     return spent / (b.limit_amount || 1) > 0.8;
   });
+  const totalIOwe = debts
+    .filter((d) => d.direction === "i_owe" && !d.settled)
+    .reduce((s, d) => s + (d.total_amount - (d.paid_amount || 0)), 0);
+  const totalOwedMe = debts
+    .filter((d) => d.direction === "they_owe" && !d.settled)
+    .reduce((s, d) => s + (d.total_amount - (d.paid_amount || 0)), 0);
+  const settledDebts = debts.filter((d) => d.settled);
+  const activeDebts = debts.filter((d) => !d.settled);
   const userName =
     user?.user_metadata?.full_name || user?.email?.split("@")[0] || "User";
 
   const NAV = [
-    { id: "dashboard", icon: "⬡", label: "Dashboard" },
+    { id: "dashboard", icon: "📊", label: "Dashboard" },
     { id: "wallet", icon: "💳", label: "Wallet" },
-    { id: "txns", icon: "↕", label: "Transactions" },
+    { id: "txns", icon: "💱", label: "Transactions" },
     { id: "recurring", icon: "🔁", label: "Recurring" },
     { id: "bills", icon: "📅", label: "Bills" },
     { id: "goals", icon: "🎯", label: "Goals" },
     { id: "emergency", icon: "🛡️", label: "Emergency" },
-    { id: "analytics", icon: "◈", label: "Analytics" },
+    { id: "debt", icon: "💸", label: "Debt" },
+    { id: "analytics", icon: "📈", label: "Analytics" },
   ];
 
   // Sidebar geometry
@@ -3261,6 +3841,7 @@ export default function App() {
                 {view === "bills" && "Bills 📅"}
                 {view === "goals" && "Goals 🎯"}
                 {view === "emergency" && "Emergency Fund 🛡️"}
+                {view === "debt" && "Debt Tracker 💸"}
                 {view === "analytics" && "Analytics 📊"}
               </div>
               <div
@@ -3309,7 +3890,7 @@ export default function App() {
               size="sm"
               onClick={() => exportCSV(txns, cats)}
             >
-              📤 CSV
+              Export
             </Btn>
             {view === "goals" && (
               <Btn variant="outline" size="sm" onClick={() => setModal("goal")}>
@@ -3333,6 +3914,11 @@ export default function App() {
             {view === "emergency" && (
               <Btn variant="outline" size="sm" onClick={() => setEfModal(true)}>
                 + Update Fund
+              </Btn>
+            )}
+            {view === "debt" && (
+              <Btn variant="outline" size="sm" onClick={() => setModal("debt")}>
+                + Add Debt
               </Btn>
             )}
             <Btn onClick={() => setModal("txn")}>+ Add</Btn>
@@ -5054,6 +5640,315 @@ export default function App() {
               </>
             )}
 
+            {/* ═══ DEBT ═══ */}
+            {view === "debt" && (
+              <>
+                {/* Stat cards */}
+                <div
+                  className="g4"
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(4,1fr)",
+                    gap: 12,
+                    marginBottom: 18,
+                  }}
+                >
+                  <StatCard
+                    label="I Owe"
+                    value={fmtC(totalIOwe, currency)}
+                    sub={
+                      debts.filter((d) => d.direction === "i_owe" && !d.settled)
+                        .length + " active"
+                    }
+                    accent="var(--expense)"
+                    icon="💸"
+                  />
+                  <StatCard
+                    label="Owed to Me"
+                    value={fmtC(totalOwedMe, currency)}
+                    sub={
+                      debts.filter(
+                        (d) => d.direction === "they_owe" && !d.settled,
+                      ).length + " active"
+                    }
+                    accent="var(--income)"
+                    icon="🤝"
+                    delay="1"
+                  />
+                  <StatCard
+                    label="Net Position"
+                    value={fmtC(totalOwedMe - totalIOwe, currency)}
+                    sub={
+                      totalOwedMe > totalIOwe ? "you're ahead" : "you owe more"
+                    }
+                    accent={
+                      totalOwedMe >= totalIOwe
+                        ? "var(--income)"
+                        : "var(--expense)"
+                    }
+                    icon="⚖️"
+                    delay="2"
+                  />
+                  <StatCard
+                    label="Settled"
+                    value={String(settledDebts.length)}
+                    sub="fully paid off"
+                    accent="var(--accent)"
+                    icon="✅"
+                    delay="3"
+                  />
+                </div>
+
+                {/* Active debts */}
+                {activeDebts.length > 0 && (
+                  <>
+                    {/* I Owe section */}
+                    {activeDebts.filter((d) => d.direction === "i_owe").length >
+                      0 && (
+                      <>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: "var(--expense)",
+                            letterSpacing: "0.06em",
+                            textTransform: "uppercase",
+                            fontFamily: "Plus Jakarta Sans,sans-serif",
+                            marginBottom: 10,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                          }}
+                        >
+                          <span>💸</span> I Owe
+                        </div>
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 10,
+                            marginBottom: 22,
+                          }}
+                        >
+                          {activeDebts
+                            .filter((d) => d.direction === "i_owe")
+                            .map((d) => (
+                              <DebtCard
+                                key={d.id}
+                                d={d}
+                                currency={currency}
+                                onEdit={() => setEditDebt(d)}
+                                onDelete={() => deleteDebt(d.id)}
+                                onPay={() => setPaymentDebt(d)}
+                              />
+                            ))}
+                        </div>
+                      </>
+                    )}
+                    {/* They Owe Me section */}
+                    {activeDebts.filter((d) => d.direction === "they_owe")
+                      .length > 0 && (
+                      <>
+                        <div
+                          style={{
+                            fontSize: 12,
+                            fontWeight: 700,
+                            color: "var(--income)",
+                            letterSpacing: "0.06em",
+                            textTransform: "uppercase",
+                            fontFamily: "Plus Jakarta Sans,sans-serif",
+                            marginBottom: 10,
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                          }}
+                        >
+                          <span>🤝</span> Owed to Me
+                        </div>
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 10,
+                            marginBottom: 22,
+                          }}
+                        >
+                          {activeDebts
+                            .filter((d) => d.direction === "they_owe")
+                            .map((d) => (
+                              <DebtCard
+                                key={d.id}
+                                d={d}
+                                currency={currency}
+                                onEdit={() => setEditDebt(d)}
+                                onDelete={() => deleteDebt(d.id)}
+                                onPay={() => setPaymentDebt(d)}
+                              />
+                            ))}
+                        </div>
+                      </>
+                    )}
+                  </>
+                )}
+
+                {activeDebts.length === 0 && (
+                  <div
+                    style={{
+                      textAlign: "center",
+                      padding: "48px 0",
+                      color: "var(--textMuted)",
+                      fontFamily: "Plus Jakarta Sans,sans-serif",
+                    }}
+                  >
+                    <div style={{ fontSize: 40, marginBottom: 12 }}>🎉</div>
+                    <div
+                      style={{
+                        fontSize: 16,
+                        fontWeight: 600,
+                        color: "var(--text)",
+                        marginBottom: 6,
+                      }}
+                    >
+                      No active debts!
+                    </div>
+                    <div style={{ fontSize: 13 }}>
+                      Add a debt to start tracking what you owe or what's owed
+                      to you.
+                    </div>
+                  </div>
+                )}
+
+                {/* Add button row */}
+                <button
+                  onClick={() => setModal("debt")}
+                  style={{
+                    border: "2px dashed var(--border)",
+                    borderRadius: 14,
+                    padding: 18,
+                    cursor: "pointer",
+                    background: "transparent",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                    transition: "all .2s",
+                    width: "100%",
+                    marginBottom: 22,
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = "var(--accent)";
+                    e.currentTarget.style.background = "var(--accentBg)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = "var(--border)";
+                    e.currentTarget.style.background = "transparent";
+                  }}
+                >
+                  <span style={{ fontSize: 20 }}>💸</span>
+                  <span
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: "var(--textSub)",
+                      fontFamily: "Plus Jakarta Sans,sans-serif",
+                    }}
+                  >
+                    Add Debt
+                  </span>
+                </button>
+
+                {/* Settled debts */}
+                {settledDebts.length > 0 && (
+                  <>
+                    <div
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 700,
+                        color: "var(--textMuted)",
+                        letterSpacing: "0.06em",
+                        textTransform: "uppercase",
+                        fontFamily: "Plus Jakarta Sans,sans-serif",
+                        marginBottom: 10,
+                      }}
+                    >
+                      ✅ Settled ({settledDebts.length})
+                    </div>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 8,
+                      }}
+                    >
+                      {settledDebts.map((d) => (
+                        <div
+                          key={d.id}
+                          style={{
+                            background: "var(--panel)",
+                            border: "1px solid var(--border)",
+                            borderRadius: 14,
+                            padding: "12px 16px",
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 12,
+                            opacity: 0.65,
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: 36,
+                              height: 36,
+                              borderRadius: 9,
+                              background: "var(--incomeBg)",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: 16,
+                              flexShrink: 0,
+                            }}
+                          >
+                            ✅
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <div
+                              style={{
+                                fontSize: 13,
+                                fontWeight: 600,
+                                color: "var(--text)",
+                                fontFamily: "Plus Jakarta Sans,sans-serif",
+                              }}
+                            >
+                              {d.name}
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 11,
+                                color: "var(--textMuted)",
+                                fontFamily: "Plus Jakarta Sans,sans-serif",
+                                marginTop: 2,
+                              }}
+                            >
+                              {d.direction === "i_owe"
+                                ? "You paid"
+                                : "They paid"}{" "}
+                              · {fmtC(d.total_amount, d.currency)}
+                            </div>
+                          </div>
+                          <Tag color="var(--income)">Settled</Tag>
+                          <IconBtn
+                            icon="✕"
+                            onClick={() => deleteDebt(d.id)}
+                            hoverColor="var(--expense)"
+                            title="Remove"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+
             {/* ═══ ANALYTICS ═══ */}
             {view === "analytics" && (
               <>
@@ -5519,6 +6414,28 @@ export default function App() {
           entry={efEditEntry}
           cur={cur}
           onSave={(id, amt, note) => editEfEntry(id, amt, note)}
+        />
+      )}
+      {modal === "debt" && (
+        <AddDebtModal
+          onClose={() => setModal(null)}
+          onAdd={addDebt}
+          currency={currency}
+        />
+      )}
+      {editDebt && (
+        <EditDebtModal
+          onClose={() => setEditDebt(null)}
+          debt={editDebt}
+          onSave={updateDebt}
+        />
+      )}
+      {paymentDebt && (
+        <AddPaymentModal
+          onClose={() => setPaymentDebt(null)}
+          debt={paymentDebt}
+          cur={cur}
+          onAdd={addDebtPayment}
         />
       )}
     </div>
