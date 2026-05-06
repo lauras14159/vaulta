@@ -3842,7 +3842,7 @@ export default function App() {
                 {view === "goals" && "Goals 🎯"}
                 {view === "emergency" && "Emergency Fund 🛡️"}
                 {view === "debt" && "Debt Tracker 💸"}
-                {view === "analytics" && "Analytics 📊"}
+                {view === "analytics" && "📈"}
               </div>
               <div
                 style={{ fontSize: 12, color: "var(--textSub)", marginTop: 1 }}
