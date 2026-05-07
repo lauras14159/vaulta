@@ -2665,7 +2665,6 @@ function AddDebtModal({ onClose, onAdd, currency }) {
     if (!name || !total || +total <= 0) return;
     setLoading(true);
     await onAdd({
-      id: uid(),
       direction,
       name: name.trim(),
       total_amount: +total,
@@ -2674,7 +2673,6 @@ function AddDebtModal({ onClose, onAdd, currency }) {
       due_date: due || null,
       currency: cur,
       settled: +paid >= +total,
-      created_at: new Date().toISOString(),
     });
     setLoading(false);
     onClose();
@@ -3842,7 +3840,7 @@ export default function App() {
                 {view === "goals" && "Goals 🎯"}
                 {view === "emergency" && "Emergency Fund 🛡️"}
                 {view === "debt" && "Debt Tracker 💸"}
-                {view === "analytics" && "📈"}
+                {view === "analytics" && "Analytics 📈"}
               </div>
               <div
                 style={{ fontSize: 12, color: "var(--textSub)", marginTop: 1 }}
@@ -5871,7 +5869,7 @@ export default function App() {
                         marginBottom: 10,
                       }}
                     >
-                      ✅ Settled ({settledDebts.length})
+                      Settled ({settledDebts.length})
                     </div>
                     <div
                       style={{
