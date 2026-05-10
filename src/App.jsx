@@ -3878,7 +3878,7 @@ export default function App() {
                 lineHeight: 1,
               }}
             >
-              ⏻
+              ←
             </button>
           </div>
         )}
