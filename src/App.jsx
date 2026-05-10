@@ -1950,7 +1950,7 @@ function EditRecurModal({ onClose, onSave, recur, cats }) {
   );
 }
 
-function BillModal({ onClose, onAdd, cats, currency, userId }) {
+function BillModal({ onClose, onAddBill, onAddRecur, cats, currency, userId }) {
   const [catId, setCatId] = useState(
     cats.filter((c) => c.type === "expense")[0]?.id || "",
   );
@@ -1958,46 +1958,143 @@ function BillModal({ onClose, onAdd, cats, currency, userId }) {
   const [note, setNote] = useState("");
   const [due, setDue] = useState(new Date().toISOString().split("T")[0]);
   const [cur, setCur] = useState(currency);
+  const [isRecurring, setIsRecurring] = useState(false);
+  const [freq, setFreq] = useState("monthly");
   const [loading, setLoading] = useState(false);
 
   async function submit() {
     if (!note || !amount) return;
     setLoading(true);
-    const { data } = await supabase
-      .from("bills")
-      .insert({
-        user_id: userId,
-        cat_id: catId,
-        amount: +amount,
-        note,
-        due_date: due,
-        paid: false,
-        currency: cur,
-      })
-      .select()
-      .single();
-    if (data) onAdd(data);
+    if (isRecurring) {
+      const { data } = await supabase
+        .from("recurring")
+        .insert({
+          user_id: userId,
+          cat_id: catId,
+          amount: +amount,
+          note,
+          frequency: freq,
+          next_date: due,
+          currency: cur,
+        })
+        .select()
+        .single();
+      if (data) onAddRecur(data);
+    } else {
+      const { data } = await supabase
+        .from("bills")
+        .insert({
+          user_id: userId,
+          cat_id: catId,
+          amount: +amount,
+          note,
+          due_date: due,
+          paid: false,
+          currency: cur,
+        })
+        .select()
+        .single();
+      if (data) onAddBill(data);
+    }
     setLoading(false);
     onClose();
   }
 
   return (
-    <Modal onClose={onClose} width={380}>
-      <MH title="📅 New Bill Reminder" onClose={onClose} />
+    <Modal onClose={onClose} width={400}>
+      <MH title="📅 Add Bill" onClose={onClose} />
+
+      {/* Recurring toggle */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          background: "var(--card)",
+          borderRadius: 10,
+          padding: "10px 14px",
+          marginBottom: 16,
+        }}
+      >
+        <div>
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              color: "var(--text)",
+              fontFamily: "Plus Jakarta Sans,sans-serif",
+            }}
+          >
+            Repeats?
+          </div>
+          <div
+            style={{
+              fontSize: 11,
+              color: "var(--textSub)",
+              fontFamily: "Plus Jakarta Sans,sans-serif",
+              marginTop: 2,
+            }}
+          >
+            {isRecurring ? "Saves as a recurring entry" : "One-time bill"}
+          </div>
+        </div>
+        <button
+          onClick={() => setIsRecurring((p) => !p)}
+          style={{
+            width: 44,
+            height: 24,
+            borderRadius: 12,
+            border: "none",
+            cursor: "pointer",
+            transition: "background .2s",
+            background: isRecurring ? "var(--accent)" : "var(--border)",
+            position: "relative",
+            flexShrink: 0,
+          }}
+        >
+          <div
+            style={{
+              width: 18,
+              height: 18,
+              borderRadius: "50%",
+              background: "#fff",
+              position: "absolute",
+              top: 3,
+              transition: "left .2s",
+              left: isRecurring ? 23 : 3,
+              boxShadow: "0 1px 3px rgba(0,0,0,.3)",
+            }}
+          />
+        </button>
+      </div>
+
       <Field
-        label="Bill Name"
+        label="Name"
         value={note}
         onChange={(e) => setNote(e.target.value)}
-        placeholder="e.g. Electricity Bill"
+        placeholder={
+          isRecurring ? "e.g. Netflix, Gym" : "e.g. Electricity Bill"
+        }
       />
-      <Field
-        label="Amount"
-        type="number"
-        value={amount}
-        onChange={(e) => setAmount(e.target.value)}
-        placeholder="0.00"
-        prefix={getCur(cur).sym}
-      />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <Field
+          label="Amount"
+          type="number"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder="0.00"
+          prefix={getCur(cur).sym}
+        />
+        <Sel
+          label="Currency"
+          value={cur}
+          onChange={(e) => setCur(e.target.value)}
+          options={CURRENCIES.map((c) => ({
+            value: c.code,
+            label: c.sym + " " + c.code,
+          }))}
+        />
+      </div>
       <Sel
         label="Category"
         value={catId}
@@ -2007,24 +2104,32 @@ function BillModal({ onClose, onAdd, cats, currency, userId }) {
           label: c.emoji + " " + c.name,
         }))}
       />
-      <Sel
-        label="Currency"
-        value={cur}
-        onChange={(e) => setCur(e.target.value)}
-        options={CURRENCIES.map((c) => ({
-          value: c.code,
-          label: c.sym + " " + c.code,
-        }))}
-      />
+      {isRecurring && (
+        <Sel
+          label="Frequency"
+          value={freq}
+          onChange={(e) => setFreq(e.target.value)}
+          options={[
+            { value: "weekly", label: "Weekly" },
+            { value: "monthly", label: "Monthly" },
+            { value: "yearly", label: "Yearly" },
+          ]}
+        />
+      )}
       <Field
-        label="Due Date"
+        label={isRecurring ? "Next Date" : "Due Date"}
         type="date"
         value={due}
         onChange={(e) => setDue(e.target.value)}
       />
-      <Btn full onClick={submit} loading={loading}>
-        Add Bill
-      </Btn>
+      <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+        <Btn variant="outline" full onClick={onClose}>
+          Cancel
+        </Btn>
+        <Btn full onClick={submit} loading={loading}>
+          {isRecurring ? "Add Recurring" : "Add Bill"}
+        </Btn>
+      </div>
     </Modal>
   );
 }
@@ -2680,7 +2785,7 @@ function AddDebtModal({ onClose, onAdd, currency }) {
 
   return (
     <Modal onClose={onClose} width={420}>
-      <MH title="💸 Add Debt" onClose={onClose} />
+      <MH title="💳 Add Debt" onClose={onClose} />
       {/* Direction toggle */}
       <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
         {[
@@ -3372,13 +3477,11 @@ export default function App() {
   const NAV = [
     { id: "dashboard", icon: "📊", label: "Dashboard" },
     { id: "wallet", icon: "💳", label: "Wallet" },
-    { id: "txns", icon: "💱", label: "Transactions" },
-    { id: "recurring", icon: "🔁", label: "Recurring" },
+    { id: "txns", icon: "↕", label: "Transactions" },
     { id: "bills", icon: "📅", label: "Bills" },
     { id: "goals", icon: "🎯", label: "Goals" },
     { id: "emergency", icon: "🛡️", label: "Emergency" },
     { id: "debt", icon: "💸", label: "Debt" },
-    { id: "analytics", icon: "📈", label: "Analytics" },
   ];
 
   // Sidebar geometry
@@ -3775,7 +3878,7 @@ export default function App() {
                 lineHeight: 1,
               }}
             >
-              ←
+              ⏻
             </button>
           </div>
         )}
@@ -3835,12 +3938,10 @@ export default function App() {
                   "Hey " + userName.split(" ")[0] + " 👋"}
                 {view === "wallet" && "Wallet 💳"}
                 {view === "txns" && "Transactions"}
-                {view === "recurring" && "Recurring 🔁"}
                 {view === "bills" && "Bills 📅"}
                 {view === "goals" && "Goals 🎯"}
                 {view === "emergency" && "Emergency Fund 🛡️"}
-                {view === "debt" && "Debt Tracker 💸"}
-                {view === "analytics" && "Analytics 📈"}
+                {view === "debt" && "Debt Tracker 💳"}
               </div>
               <div
                 style={{ fontSize: 12, color: "var(--textSub)", marginTop: 1 }}
@@ -3895,18 +3996,9 @@ export default function App() {
                 + Goal
               </Btn>
             )}
-            {view === "recurring" && (
-              <Btn
-                variant="outline"
-                size="sm"
-                onClick={() => setModal("recur")}
-              >
-                + Recurring
-              </Btn>
-            )}
             {view === "bills" && (
               <Btn variant="outline" size="sm" onClick={() => setModal("bill")}>
-                + Bill
+                + Add
               </Btn>
             )}
             {view === "emergency" && (
@@ -4329,6 +4421,354 @@ export default function App() {
                       ))
                   )}
                 </Card>
+
+                {/* ── Analytics content ── */}
+                <div
+                  className="g2"
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr",
+                    gap: 14,
+                    marginTop: 14,
+                    marginBottom: 14,
+                  }}
+                >
+                  <Card>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: "var(--text)",
+                        marginBottom: 14,
+                      }}
+                    >
+                      Monthly Overview
+                    </div>
+                    <ResponsiveContainer width="100%" height={210}>
+                      <BarChart data={MONTHLY_DATA} barGap={3}>
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          stroke="var(--border)"
+                        />
+                        <XAxis
+                          dataKey="m"
+                          tick={{
+                            fill: "var(--textMuted)",
+                            fontSize: 10,
+                            fontFamily: "JetBrains Mono",
+                          }}
+                          axisLine={false}
+                          tickLine={false}
+                        />
+                        <YAxis
+                          tick={{
+                            fill: "var(--textMuted)",
+                            fontSize: 10,
+                            fontFamily: "JetBrains Mono",
+                          }}
+                          axisLine={false}
+                          tickLine={false}
+                          tickFormatter={(v) => fmtK(v, cur.sym)}
+                        />
+                        <Tooltip
+                          contentStyle={ttStyle}
+                          formatter={(v) => [fmtC(v, currency)]}
+                        />
+                        <Bar
+                          dataKey="inc"
+                          fill="#34d399"
+                          radius={[4, 4, 0, 0]}
+                          name="Income"
+                        />
+                        <Bar
+                          dataKey="exp"
+                          fill="#f87171"
+                          radius={[4, 4, 0, 0]}
+                          name="Expenses"
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </Card>
+                  <Card>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 700,
+                        color: "var(--text)",
+                        marginBottom: 14,
+                      }}
+                    >
+                      Spending Breakdown
+                    </div>
+                    {catExp.slice(0, 7).map((e) => {
+                      const c = cats.find((x) => x.id === e.catId);
+                      const pct = totExp
+                        ? ((e.value / totExp) * 100).toFixed(1)
+                        : 0;
+                      return (
+                        <div key={e.catId} style={{ marginBottom: 10 }}>
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              marginBottom: 4,
+                            }}
+                          >
+                            <span
+                              style={{
+                                fontSize: 12,
+                                color: "var(--text)",
+                                fontFamily: "Plus Jakarta Sans,sans-serif",
+                              }}
+                            >
+                              {c ? c.emoji : "📦"} {c ? c.name : "Other"}
+                            </span>
+                            <span
+                              style={{
+                                fontSize: 11,
+                                color: "var(--textSub)",
+                                fontFamily: "JetBrains Mono,monospace",
+                              }}
+                            >
+                              {fmtC(e.value, currency)} · {pct}%
+                            </span>
+                          </div>
+                          <div
+                            style={{
+                              height: 5,
+                              background: "var(--card)",
+                              borderRadius: 3,
+                              overflow: "hidden",
+                            }}
+                          >
+                            <div
+                              style={{
+                                height: "100%",
+                                width: pct + "%",
+                                background: c ? c.color : "#6b7280",
+                                borderRadius: 3,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </Card>
+                </div>
+                <Card style={{ marginBottom: 14 }}>
+                  <div
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 700,
+                      color: "var(--text)",
+                      marginBottom: 14,
+                    }}
+                  >
+                    Budget Progress
+                  </div>
+                  {budgets.length === 0 ? (
+                    <div
+                      style={{
+                        color: "var(--textMuted)",
+                        fontSize: 13,
+                        fontFamily: "Plus Jakarta Sans,sans-serif",
+                      }}
+                    >
+                      No budgets set — click "Budgets" in the sidebar.
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns:
+                          "repeat(auto-fill,minmax(190px,1fr))",
+                        gap: 11,
+                      }}
+                    >
+                      {budgets.map((b) => {
+                        const cat = cats.find((c) => c.id === b.cat_id);
+                        const spent = txns
+                          .filter(
+                            (t) =>
+                              t.type === "expense" &&
+                              (t.cat_id || t.catId) === b.cat_id,
+                          )
+                          .reduce((s, t) => s + t.amount, 0);
+                        const limit = b.limit_amount || 0;
+                        const pct = limit
+                          ? Math.min(100, (spent / limit) * 100)
+                          : 0;
+                        const over = pct > 100;
+                        const warn = pct > 80;
+                        return (
+                          <div
+                            key={b.id}
+                            style={{
+                              background: "var(--card)",
+                              borderRadius: 11,
+                              padding: 13,
+                              border:
+                                "1px solid " +
+                                (over
+                                  ? "var(--expense)"
+                                  : warn
+                                    ? "var(--amber)"
+                                    : "var(--border)"),
+                            }}
+                          >
+                            <div
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                marginBottom: 6,
+                              }}
+                            >
+                              <span style={{ fontSize: 16 }}>
+                                {cat ? cat.emoji : "📦"}
+                              </span>
+                              <Tag
+                                color={
+                                  over
+                                    ? "var(--expense)"
+                                    : warn
+                                      ? "var(--amber)"
+                                      : "var(--textSub)"
+                                }
+                              >
+                                {pct.toFixed(0)}%
+                              </Tag>
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 12,
+                                fontWeight: 600,
+                                color: "var(--text)",
+                                fontFamily: "Plus Jakarta Sans,sans-serif",
+                                marginBottom: 6,
+                              }}
+                            >
+                              {cat ? cat.name : "Other"}
+                            </div>
+                            <div
+                              style={{
+                                height: 5,
+                                background: "var(--border)",
+                                borderRadius: 3,
+                                overflow: "hidden",
+                                marginBottom: 5,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  height: "100%",
+                                  width: pct + "%",
+                                  background: over
+                                    ? "var(--expense)"
+                                    : warn
+                                      ? "var(--amber)"
+                                      : cat
+                                        ? cat.color
+                                        : "var(--accent)",
+                                  borderRadius: 3,
+                                  transition: "width .6s",
+                                }}
+                              />
+                            </div>
+                            <div
+                              style={{
+                                fontSize: 10,
+                                color: "var(--textMuted)",
+                                fontFamily: "JetBrains Mono,monospace",
+                              }}
+                            >
+                              {fmtC(spent, currency)} / {fmtC(limit, currency)}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </Card>
+                <Card>
+                  <div
+                    style={{
+                      fontSize: 14,
+                      fontWeight: 700,
+                      color: "var(--text)",
+                      marginBottom: 14,
+                    }}
+                  >
+                    Income Sources
+                  </div>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns:
+                        "repeat(auto-fill,minmax(140px,1fr))",
+                      gap: 10,
+                    }}
+                  >
+                    {Object.entries(
+                      txns
+                        .filter((t) => t.type === "income")
+                        .reduce((m, t) => {
+                          const k = t.cat_id || t.catId;
+                          m[k] = (m[k] || 0) + t.amount;
+                          return m;
+                        }, {}),
+                    ).map(([catId, amt]) => {
+                      const c = cats.find((x) => x.id === catId);
+                      return (
+                        <div
+                          key={catId}
+                          style={{
+                            background: "var(--card)",
+                            borderRadius: 11,
+                            padding: "12px 14px",
+                            borderLeft:
+                              "3px solid " + (c ? c.color : "var(--accent)"),
+                          }}
+                        >
+                          <div style={{ fontSize: 18, marginBottom: 5 }}>
+                            {c ? c.emoji : "💰"}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 11,
+                              color: "var(--textMuted)",
+                              fontFamily: "Plus Jakarta Sans,sans-serif",
+                            }}
+                          >
+                            {c ? c.name : "Income"}
+                          </div>
+                          <div
+                            style={{
+                              fontSize: 16,
+                              fontWeight: 700,
+                              fontFamily: "JetBrains Mono,monospace",
+                              color: "var(--text)",
+                              marginTop: 3,
+                            }}
+                          >
+                            {fmtC(amt, currency)}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {txns.filter((t) => t.type === "income").length === 0 && (
+                      <div
+                        style={{
+                          color: "var(--textMuted)",
+                          fontSize: 13,
+                          fontFamily: "Plus Jakarta Sans,sans-serif",
+                        }}
+                      >
+                        No income recorded yet.
+                      </div>
+                    )}
+                  </div>
+                </Card>
               </>
             )}
 
@@ -4596,136 +5036,7 @@ export default function App() {
               </>
             )}
 
-            {/* ═══ RECURRING ═══ */}
-            {view === "recurring" && (
-              <>
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))",
-                    gap: 12,
-                  }}
-                  className="fu"
-                >
-                  {recurring.map((r) => {
-                    const cat = cats.find(
-                      (c) => c.id === (r.cat_id || r.catId),
-                    ) || { emoji: "📦", name: "Other" };
-                    return (
-                      <Card key={r.id}>
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            marginBottom: 12,
-                          }}
-                        >
-                          <div
-                            style={{
-                              width: 36,
-                              height: 36,
-                              borderRadius: 9,
-                              background: "var(--expenseBg)",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              fontSize: 18,
-                            }}
-                          >
-                            {cat.emoji}
-                          </div>
-                          <div style={{ display: "flex", gap: 2 }}>
-                            <IconBtn
-                              icon="✎"
-                              onClick={() =>
-                                setEditItem({ type: "recur", data: r })
-                              }
-                              hoverColor="var(--accent)"
-                              title="Edit"
-                            />
-                            <IconBtn
-                              icon="✕"
-                              onClick={() => deleteRecurring(r.id)}
-                              hoverColor="var(--expense)"
-                              title="Delete"
-                            />
-                          </div>
-                        </div>
-                        <div
-                          style={{
-                            fontSize: 14,
-                            fontWeight: 700,
-                            color: "var(--text)",
-                            fontFamily: "Plus Jakarta Sans,sans-serif",
-                          }}
-                        >
-                          {r.note || cat.name}
-                        </div>
-                        <div
-                          style={{
-                            fontSize: 20,
-                            fontWeight: 700,
-                            color: "var(--expense)",
-                            fontFamily: "JetBrains Mono,monospace",
-                            margin: "6px 0",
-                          }}
-                        >
-                          {fmtC(r.amount, r.currency)}
-                        </div>
-                        <div
-                          style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
-                        >
-                          <Tag color="var(--accent)">{r.frequency}</Tag>
-                          <Tag color="var(--textSub)">
-                            Next: {r.next_date || r.nextDate}
-                          </Tag>
-                        </div>
-                      </Card>
-                    );
-                  })}
-                  <button
-                    onClick={() => setModal("recur")}
-                    style={{
-                      border: "2px dashed var(--border)",
-                      borderRadius: 16,
-                      padding: 20,
-                      cursor: "pointer",
-                      background: "transparent",
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 8,
-                      transition: "all .2s",
-                      minHeight: 120,
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = "var(--accent)";
-                      e.currentTarget.style.background = "var(--accentBg)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = "var(--border)";
-                      e.currentTarget.style.background = "transparent";
-                    }}
-                  >
-                    <span style={{ fontSize: 24 }}>🔁</span>
-                    <span
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 600,
-                        color: "var(--textSub)",
-                        fontFamily: "Plus Jakarta Sans,sans-serif",
-                      }}
-                    >
-                      Add Recurring
-                    </span>
-                  </button>
-                </div>
-              </>
-            )}
-
-            {/* ═══ BILLS ═══ */}
+            {/* ═══ BILLS & RECURRING ═══ */}
             {view === "bills" && (
               <>
                 {overdueBills.length > 0 && (
@@ -4767,8 +5078,33 @@ export default function App() {
                     </div>
                   </div>
                 )}
+
+                {/* Bills section */}
+                {bills.length > 0 && (
+                  <div
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: "var(--textMuted)",
+                      letterSpacing: "0.06em",
+                      textTransform: "uppercase",
+                      fontFamily: "Plus Jakarta Sans,sans-serif",
+                      marginBottom: 10,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                  >
+                    📅 Bills
+                  </div>
+                )}
                 <div
-                  style={{ display: "flex", flexDirection: "column", gap: 10 }}
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 10,
+                    marginBottom: bills.length > 0 ? 22 : 0,
+                  }}
                   className="fu1"
                 >
                   {bills.map((b) => {
@@ -4901,42 +5237,152 @@ export default function App() {
                       </div>
                     );
                   })}
-                  <button
-                    onClick={() => setModal("bill")}
+                </div>
+
+                {/* Recurring section */}
+                {recurring.length > 0 && (
+                  <div
                     style={{
-                      border: "2px dashed var(--border)",
-                      borderRadius: 14,
-                      padding: 18,
-                      cursor: "pointer",
-                      background: "transparent",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: "var(--textMuted)",
+                      letterSpacing: "0.06em",
+                      textTransform: "uppercase",
+                      fontFamily: "Plus Jakarta Sans,sans-serif",
+                      marginBottom: 10,
                       display: "flex",
                       alignItems: "center",
-                      justifyContent: "center",
-                      gap: 8,
-                      transition: "all .2s",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = "var(--accent)";
-                      e.currentTarget.style.background = "var(--accentBg)";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = "var(--border)";
-                      e.currentTarget.style.background = "transparent";
+                      gap: 6,
                     }}
                   >
-                    <span style={{ fontSize: 20 }}>📅</span>
-                    <span
-                      style={{
-                        fontSize: 13,
-                        fontWeight: 600,
-                        color: "var(--textSub)",
-                        fontFamily: "Plus Jakarta Sans,sans-serif",
-                      }}
-                    >
-                      Add Bill Reminder
-                    </span>
-                  </button>
+                    🔁 Recurring
+                  </div>
+                )}
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fill,minmax(230px,1fr))",
+                    gap: 12,
+                    marginBottom: 22,
+                  }}
+                  className="fu2"
+                >
+                  {recurring.map((r) => {
+                    const cat = cats.find(
+                      (c) => c.id === (r.cat_id || r.catId),
+                    ) || { emoji: "📦", name: "Other" };
+                    return (
+                      <Card key={r.id}>
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            marginBottom: 10,
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: 36,
+                              height: 36,
+                              borderRadius: 9,
+                              background: "var(--expenseBg)",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: 18,
+                            }}
+                          >
+                            {cat.emoji}
+                          </div>
+                          <div style={{ display: "flex", gap: 2 }}>
+                            <IconBtn
+                              icon="✎"
+                              onClick={() =>
+                                setEditItem({ type: "recur", data: r })
+                              }
+                              hoverColor="var(--accent)"
+                              title="Edit"
+                            />
+                            <IconBtn
+                              icon="✕"
+                              onClick={() => deleteRecurring(r.id)}
+                              hoverColor="var(--expense)"
+                              title="Delete"
+                            />
+                          </div>
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 14,
+                            fontWeight: 700,
+                            color: "var(--text)",
+                            fontFamily: "Plus Jakarta Sans,sans-serif",
+                          }}
+                        >
+                          {r.note || cat.name}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: 18,
+                            fontWeight: 700,
+                            color: "var(--expense)",
+                            fontFamily: "JetBrains Mono,monospace",
+                            margin: "5px 0",
+                          }}
+                        >
+                          {fmtC(r.amount, r.currency)}
+                        </div>
+                        <div
+                          style={{ display: "flex", gap: 6, flexWrap: "wrap" }}
+                        >
+                          <Tag color="var(--accent)">{r.frequency}</Tag>
+                          <Tag color="var(--textSub)">
+                            Next: {r.next_date || r.nextDate}
+                          </Tag>
+                        </div>
+                      </Card>
+                    );
+                  })}
                 </div>
+
+                {/* Add button */}
+                <button
+                  onClick={() => setModal("bill")}
+                  style={{
+                    border: "2px dashed var(--border)",
+                    borderRadius: 14,
+                    padding: 18,
+                    cursor: "pointer",
+                    background: "transparent",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 8,
+                    transition: "all .2s",
+                    width: "100%",
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = "var(--accent)";
+                    e.currentTarget.style.background = "var(--accentBg)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = "var(--border)";
+                    e.currentTarget.style.background = "transparent";
+                  }}
+                >
+                  <span style={{ fontSize: 20 }}>📅</span>
+                  <span
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: "var(--textSub)",
+                      fontFamily: "Plus Jakarta Sans,sans-serif",
+                    }}
+                  >
+                    Add Bill or Recurring
+                  </span>
+                </button>
               </>
             )}
 
@@ -5842,7 +6288,7 @@ export default function App() {
                     e.currentTarget.style.background = "transparent";
                   }}
                 >
-                  <span style={{ fontSize: 20 }}>💸</span>
+                  <span style={{ fontSize: 20 }}>💳</span>
                   <span
                     style={{
                       fontSize: 13,
@@ -5869,7 +6315,7 @@ export default function App() {
                         marginBottom: 10,
                       }}
                     >
-                      Settled ({settledDebts.length})
+                      ✅ Settled ({settledDebts.length})
                     </div>
                     <div
                       style={{
@@ -5951,350 +6397,16 @@ export default function App() {
             {view === "analytics" && (
               <>
                 <div
-                  className="g2"
                   style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr",
-                    gap: 14,
-                    marginBottom: 14,
+                    fontSize: 13,
+                    color: "var(--textSub)",
+                    marginBottom: 18,
+                    fontFamily: "Plus Jakarta Sans,sans-serif",
                   }}
                 >
-                  <Card className="fu">
-                    <div
-                      style={{
-                        fontSize: 14,
-                        fontWeight: 700,
-                        color: "var(--text)",
-                        marginBottom: 14,
-                      }}
-                    >
-                      Monthly Overview
-                    </div>
-                    <ResponsiveContainer width="100%" height={210}>
-                      <BarChart data={MONTHLY_DATA} barGap={3}>
-                        <CartesianGrid
-                          strokeDasharray="3 3"
-                          stroke="var(--border)"
-                        />
-                        <XAxis
-                          dataKey="m"
-                          tick={{
-                            fill: "var(--textMuted)",
-                            fontSize: 10,
-                            fontFamily: "JetBrains Mono",
-                          }}
-                          axisLine={false}
-                          tickLine={false}
-                        />
-                        <YAxis
-                          tick={{
-                            fill: "var(--textMuted)",
-                            fontSize: 10,
-                            fontFamily: "JetBrains Mono",
-                          }}
-                          axisLine={false}
-                          tickLine={false}
-                          tickFormatter={(v) => fmtK(v, cur.sym)}
-                        />
-                        <Tooltip
-                          contentStyle={ttStyle}
-                          formatter={(v) => [fmtC(v, currency)]}
-                        />
-                        <Bar
-                          dataKey="inc"
-                          fill="#34d399"
-                          radius={[4, 4, 0, 0]}
-                          name="Income"
-                        />
-                        <Bar
-                          dataKey="exp"
-                          fill="#f87171"
-                          radius={[4, 4, 0, 0]}
-                          name="Expenses"
-                        />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </Card>
-                  <Card className="fu1">
-                    <div
-                      style={{
-                        fontSize: 14,
-                        fontWeight: 700,
-                        color: "var(--text)",
-                        marginBottom: 14,
-                      }}
-                    >
-                      Spending Breakdown
-                    </div>
-                    {catExp.slice(0, 7).map((e) => {
-                      const c = cats.find((x) => x.id === e.catId);
-                      const pct = totExp
-                        ? ((e.value / totExp) * 100).toFixed(1)
-                        : 0;
-                      return (
-                        <div key={e.catId} style={{ marginBottom: 10 }}>
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              marginBottom: 4,
-                            }}
-                          >
-                            <span
-                              style={{
-                                fontSize: 12,
-                                color: "var(--text)",
-                                fontFamily: "Plus Jakarta Sans,sans-serif",
-                              }}
-                            >
-                              {c ? c.emoji : "📦"} {c ? c.name : "Other"}
-                            </span>
-                            <span
-                              style={{
-                                fontSize: 11,
-                                color: "var(--textSub)",
-                                fontFamily: "JetBrains Mono,monospace",
-                              }}
-                            >
-                              {fmtC(e.value, currency)} · {pct}%
-                            </span>
-                          </div>
-                          <div
-                            style={{
-                              height: 5,
-                              background: "var(--card)",
-                              borderRadius: 3,
-                              overflow: "hidden",
-                            }}
-                          >
-                            <div
-                              style={{
-                                height: "100%",
-                                width: pct + "%",
-                                background: c ? c.color : "#6b7280",
-                                borderRadius: 3,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </Card>
+                  This page has moved into the Dashboard — scroll down to see
+                  charts, budgets and income sources!
                 </div>
-                <Card className="fu2" style={{ marginBottom: 14 }}>
-                  <div
-                    style={{
-                      fontSize: 14,
-                      fontWeight: 700,
-                      color: "var(--text)",
-                      marginBottom: 14,
-                    }}
-                  >
-                    Budget Progress
-                  </div>
-                  {budgets.length === 0 ? (
-                    <div
-                      style={{
-                        color: "var(--textMuted)",
-                        fontSize: 13,
-                        fontFamily: "Plus Jakarta Sans,sans-serif",
-                      }}
-                    >
-                      No budgets set — click "Budgets" in the sidebar.
-                    </div>
-                  ) : (
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns:
-                          "repeat(auto-fill,minmax(190px,1fr))",
-                        gap: 11,
-                      }}
-                    >
-                      {budgets.map((b) => {
-                        const cat = cats.find((c) => c.id === b.cat_id);
-                        const spent = txns
-                          .filter(
-                            (t) =>
-                              t.type === "expense" &&
-                              (t.cat_id || t.catId) === b.cat_id,
-                          )
-                          .reduce((s, t) => s + t.amount, 0);
-                        const limit = b.limit_amount || 0;
-                        const pct = limit
-                          ? Math.min(100, (spent / limit) * 100)
-                          : 0;
-                        const over = pct > 100;
-                        const warn = pct > 80;
-                        return (
-                          <div
-                            key={b.id}
-                            style={{
-                              background: "var(--card)",
-                              borderRadius: 11,
-                              padding: 13,
-                              border:
-                                "1px solid " +
-                                (over
-                                  ? "var(--expense)"
-                                  : warn
-                                    ? "var(--amber)"
-                                    : "var(--border)"),
-                            }}
-                          >
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                marginBottom: 6,
-                              }}
-                            >
-                              <span style={{ fontSize: 16 }}>
-                                {cat ? cat.emoji : "📦"}
-                              </span>
-                              <Tag
-                                color={
-                                  over
-                                    ? "var(--expense)"
-                                    : warn
-                                      ? "var(--amber)"
-                                      : "var(--textSub)"
-                                }
-                              >
-                                {pct.toFixed(0)}%
-                              </Tag>
-                            </div>
-                            <div
-                              style={{
-                                fontSize: 12,
-                                fontWeight: 600,
-                                color: "var(--text)",
-                                fontFamily: "Plus Jakarta Sans,sans-serif",
-                                marginBottom: 6,
-                              }}
-                            >
-                              {cat ? cat.name : "Other"}
-                            </div>
-                            <div
-                              style={{
-                                height: 5,
-                                background: "var(--border)",
-                                borderRadius: 3,
-                                overflow: "hidden",
-                                marginBottom: 5,
-                              }}
-                            >
-                              <div
-                                style={{
-                                  height: "100%",
-                                  width: pct + "%",
-                                  background: over
-                                    ? "var(--expense)"
-                                    : warn
-                                      ? "var(--amber)"
-                                      : cat
-                                        ? cat.color
-                                        : "var(--accent)",
-                                  borderRadius: 3,
-                                  transition: "width .6s",
-                                }}
-                              />
-                            </div>
-                            <div
-                              style={{
-                                fontSize: 10,
-                                color: "var(--textMuted)",
-                                fontFamily: "JetBrains Mono,monospace",
-                              }}
-                            >
-                              {fmtC(spent, currency)} / {fmtC(limit, currency)}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </Card>
-                <Card className="fu3">
-                  <div
-                    style={{
-                      fontSize: 14,
-                      fontWeight: 700,
-                      color: "var(--text)",
-                      marginBottom: 14,
-                    }}
-                  >
-                    Income Sources
-                  </div>
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns:
-                        "repeat(auto-fill,minmax(140px,1fr))",
-                      gap: 10,
-                    }}
-                  >
-                    {Object.entries(
-                      txns
-                        .filter((t) => t.type === "income")
-                        .reduce((m, t) => {
-                          const k = t.cat_id || t.catId;
-                          m[k] = (m[k] || 0) + t.amount;
-                          return m;
-                        }, {}),
-                    ).map(([catId, amt]) => {
-                      const c = cats.find((x) => x.id === catId);
-                      return (
-                        <div
-                          key={catId}
-                          style={{
-                            background: "var(--card)",
-                            borderRadius: 11,
-                            padding: "12px 14px",
-                            borderLeft:
-                              "3px solid " + (c ? c.color : "var(--accent)"),
-                          }}
-                        >
-                          <div style={{ fontSize: 18, marginBottom: 5 }}>
-                            {c ? c.emoji : "💰"}
-                          </div>
-                          <div
-                            style={{
-                              fontSize: 11,
-                              color: "var(--textMuted)",
-                              fontFamily: "Plus Jakarta Sans,sans-serif",
-                            }}
-                          >
-                            {c ? c.name : "Income"}
-                          </div>
-                          <div
-                            style={{
-                              fontSize: 16,
-                              fontWeight: 700,
-                              fontFamily: "JetBrains Mono,monospace",
-                              color: "var(--text)",
-                              marginTop: 3,
-                            }}
-                          >
-                            {fmtC(amt, currency)}
-                          </div>
-                        </div>
-                      );
-                    })}
-                    {txns.filter((t) => t.type === "income").length === 0 && (
-                      <div
-                        style={{
-                          color: "var(--textMuted)",
-                          fontSize: 13,
-                          fontFamily: "Plus Jakarta Sans,sans-serif",
-                        }}
-                      >
-                        No income recorded yet.
-                      </div>
-                    )}
-                  </div>
-                </Card>
               </>
             )}
           </>
@@ -6340,19 +6452,11 @@ export default function App() {
           userId={user.id}
         />
       )}
-      {modal === "recur" && (
-        <RecurModal
-          onClose={() => setModal(null)}
-          onAdd={(r) => setRecurring((p) => [...p, r])}
-          cats={cats}
-          currency={currency}
-          userId={user.id}
-        />
-      )}
       {modal === "bill" && (
         <BillModal
           onClose={() => setModal(null)}
-          onAdd={(b) => setBills((p) => [...p, b])}
+          onAddBill={(b) => setBills((p) => [...p, b])}
+          onAddRecur={(r) => setRecurring((p) => [...p, r])}
           cats={cats}
           currency={currency}
           userId={user.id}
