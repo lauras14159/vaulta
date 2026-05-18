@@ -1608,15 +1608,17 @@ function WalletModal({ onClose, wallet, onSave, userId }) {
 
   async function save() {
     setLoading(true);
-    await supabase.from("wallet").upsert(
-      {
-        user_id: userId,
-        cash: +cash || 0,
-        bank: +bank || 0,
-        savings: +sav || 0,
-      },
-      { onConflict: "user_id" },
-    );
+    await supabase
+      .from("wallet")
+      .upsert(
+        {
+          user_id: userId,
+          cash: +cash || 0,
+          bank: +bank || 0,
+          savings: +sav || 0,
+        },
+        { onConflict: "user_id" },
+      );
     onSave({ cash: +cash || 0, bank: +bank || 0, savings: +sav || 0 });
     setLoading(false);
     onClose();
@@ -2025,7 +2027,7 @@ function BillModal({ onClose, onAddBill, onAddRecur, cats, currency, userId }) {
               fontFamily: "Plus Jakarta Sans,sans-serif",
             }}
           >
-            Repeats?
+            Recurring?
           </div>
           <div
             style={{
@@ -3344,14 +3346,16 @@ export default function App() {
         .update({ saved: current, target })
         .eq("id", existing.data.id);
     } else {
-      await supabase.from("goals").insert({
-        user_id: user.id,
-        name: "__ef__",
-        emoji: "🛡️",
-        target,
-        saved: current,
-        deadline: null,
-      });
+      await supabase
+        .from("goals")
+        .insert({
+          user_id: user.id,
+          name: "__ef__",
+          emoji: "🛡️",
+          target,
+          saved: current,
+          deadline: null,
+        });
     }
   }
 
@@ -3558,8 +3562,9 @@ export default function App() {
               : `translateX(-${SIDEBAR_W}px)`
             : "translateX(0)",
           transition:
-            "transform .3s cubic-bezier(.4,0,.2,1), width .3s cubic-bezier(.4,0,.2,1), padding .3s cubic-bezier(.4,0,.2,1)",
+            "transform .32s cubic-bezier(.4,0,.2,1), width .32s cubic-bezier(.4,0,.2,1), padding .32s cubic-bezier(.4,0,.2,1)",
           overflow: "hidden",
+          willChange: "transform, width",
         }}
       >
         {/* Header */}
@@ -3651,7 +3656,15 @@ export default function App() {
                   {n.icon}
                 </span>
                 {!iconOnly && (
-                  <span style={{ whiteSpace: "nowrap" }}>{n.label}</span>
+                  <span
+                    style={{
+                      whiteSpace: "nowrap",
+                      opacity: sideOpen || isMobile ? 1 : 0,
+                      transition: "opacity .15s ease",
+                    }}
+                  >
+                    {n.label}
+                  </span>
                 )}
                 {n.id === "bills" && overdueBills.length > 0 && (
                   <span
@@ -3831,7 +3844,7 @@ export default function App() {
                 textAlign: "left",
               }}
             >
-              ← Sign Out
+              ←
             </button>
           </div>
         )}
@@ -3878,7 +3891,7 @@ export default function App() {
                 lineHeight: 1,
               }}
             >
-              ←
+              ⏻
             </button>
           </div>
         )}
@@ -3996,11 +4009,7 @@ export default function App() {
                 + Goal
               </Btn>
             )}
-            {view === "bills" && (
-              <Btn variant="outline" size="sm" onClick={() => setModal("bill")}>
-                + Add
-              </Btn>
-            )}
+            {view === "bills" && <span style={{ display: "none" }} />}
             {view === "emergency" && (
               <Btn variant="outline" size="sm" onClick={() => setEfModal(true)}>
                 + Update Fund
@@ -5350,38 +5359,31 @@ export default function App() {
                 <button
                   onClick={() => setModal("bill")}
                   style={{
-                    border: "2px dashed var(--border)",
-                    borderRadius: 14,
-                    padding: 18,
+                    border: "1px solid var(--border)",
+                    borderRadius: 9,
+                    padding: "9px 18px",
                     cursor: "pointer",
                     background: "transparent",
-                    display: "flex",
+                    display: "inline-flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    gap: 8,
+                    gap: 6,
                     transition: "all .2s",
-                    width: "100%",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: "var(--text)",
+                    fontFamily: "Plus Jakarta Sans,sans-serif",
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.borderColor = "var(--accent)";
-                    e.currentTarget.style.background = "var(--accentBg)";
+                    e.currentTarget.style.color = "var(--accent)";
                   }}
                   onMouseLeave={(e) => {
                     e.currentTarget.style.borderColor = "var(--border)";
-                    e.currentTarget.style.background = "transparent";
+                    e.currentTarget.style.color = "var(--text)";
                   }}
                 >
-                  <span style={{ fontSize: 20 }}>📅</span>
-                  <span
-                    style={{
-                      fontSize: 13,
-                      fontWeight: 600,
-                      color: "var(--textSub)",
-                      fontFamily: "Plus Jakarta Sans,sans-serif",
-                    }}
-                  >
-                    Add Bill or Recurring
-                  </span>
+                  + Add Bill
                 </button>
               </>
             )}
