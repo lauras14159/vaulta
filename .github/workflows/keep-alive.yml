@@ -2,15 +2,32 @@ name: Keep Supabase Alive
 
 on:
   schedule:
-    - cron: "0 12 */3 * *" # runs every 3 days at noon
-  workflow_dispatch: # lets you run it manually too
+    # Runs every 3 days at noon UTC — well under Supabase's 7-day pause threshold
+    - cron: "0 12 */3 * *"
+  workflow_dispatch: # lets you trigger it manually from the Actions tab to test
 
 jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Supabase
+      - name: Verify secrets are configured
         run: |
-          curl -X GET "https://ukkengybjfjqbcpqntzk.supabase.co/rest/v1/" \
-          -H "apikey: sb_publishable_USnPeiTEOCMK1O_RaUjO4Q_b1a39BZw" \
-          -H "Authorization: Bearer sb_publishable_USnPeiTEOCMK1O_RaUjO4Q_b1a39BZw"
+          if [ -z "${{ secrets.SUPABASE_URL }}" ] || [ -z "${{ secrets.SUPABASE_ANON_KEY }}" ]; then
+            echo "::error::SUPABASE_URL or SUPABASE_ANON_KEY secret is missing. Add them in repo Settings → Secrets and variables → Actions."
+            exit 1
+          fi
+          echo "Secrets are present."
+
+      - name: Query a real table to register DB activity
+        run: |
+          curl --fail --silent --show-error \
+            -X GET "${{ secrets.SUPABASE_URL }}/rest/v1/categories?select=id&limit=1" \
+            -H "apikey: ${{ secrets.SUPABASE_ANON_KEY }}" \
+            -H "Authorization: Bearer ${{ secrets.SUPABASE_ANON_KEY }}" \
+            --output /tmp/response.json \
+            --write-out "HTTP Status: %{http_code}\n"
+          echo "Response body:"
+          cat /tmp/response.json
+
+      - name: Confirm success
+        run: echo "✅ Supabase pinged successfully — project activity registered."
